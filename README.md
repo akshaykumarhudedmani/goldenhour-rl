@@ -114,6 +114,13 @@ python -m goldenhour_rl.eval.benchmark --eval_data data/crisis_eval.jsonl --dry_
 python -m goldenhour_rl.training.train_grpo --data_path data/crisis_eval.jsonl --mock_cpu
 ```
 
+### 5. Launch Interactive Telemetry Dashboard
+```bash
+pip install -e ".[demo]"
+python spaces/app.py
+```
+*Visualizes side-by-side triage decisions, ICU/ventilator capacity counters, and Golden-Hour survival margins.*
+
 ---
 
 ## 5. Cloud GPU Training (Kaggle / Colab)
@@ -125,7 +132,7 @@ To train on a free 16GB T4 GPU:
    ```bash
    !git clone https://github.com/akshaykumarhudedmani/goldenhour-rl.git
    %cd goldenhour-rl
-   !pip install -r requirements.txt unsloth
+   !pip install -e . unsloth
    ```
 3. Run the GRPO training loop:
    ```bash
@@ -141,6 +148,7 @@ To train on a free 16GB T4 GPU:
 goldenhour-rl/
 ├── .gitignore                      # Enforces zero secret leakage
 ├── .env.example                    # Environment template
+├── pyproject.toml                  # Standards-compliant package definition
 ├── requirements.txt                # Pinned dependencies
 ├── README.md                       # Documentation & benchmarks
 ├── goldenhour_rl/
@@ -154,6 +162,9 @@ goldenhour-rl/
 │   │   └── train_grpo.py           # Unsloth 4-bit QLoRA + TRL GRPOTrainer harness
 │   └── eval/
 │       └── benchmark.py            # Out-of-distribution evaluation telemetry
+├── spaces/
+│   ├── app.py                      # Interactive Gradio Telemetry Benchmark UI
+│   └── requirements.txt            # Hugging Face Spaces dependencies
 ├── tests/
 │   ├── test_generator.py           # Mathematical feasibility invariant tests
 │   └── test_sandbox.py             # AST security, timeouts & invariant unit tests
