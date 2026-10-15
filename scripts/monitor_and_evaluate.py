@@ -95,6 +95,28 @@ def append_benchmark_to_readme(base_metrics, rl_metrics):
         print("[README] Evaluation rows already present in README.md.")
 
 
+def trigger_eval_kernel():
+    """Pushes the Kaggle evaluation kernel once GPU is freed."""
+    api = KaggleApi()
+    api.authenticate()
+    print("[Pipeline] Pushing evaluation kernel to Kaggle GPU...")
+    res = api.kernels_push("kaggle_eval")
+    print(f"[Pipeline] Evaluation kernel pushed: {res}")
+
+
+def commit_and_push_readme():
+    """Commits and pushes updated README.md to GitHub."""
+    import subprocess
+    root_dir = Path(__file__).resolve().parent.parent
+    try:
+        subprocess.check_call(["git", "add", "README.md"], cwd=root_dir)
+        subprocess.check_call(["git", "commit", "-m", "benchmark: add empirical Base vs GoldenHour-RL Step 120 evaluation"], cwd=root_dir)
+        subprocess.check_call(["git", "push", "origin", "main"], cwd=root_dir)
+        print("[Git] Successfully pushed updated README.md to GitHub main!")
+    except Exception as e:
+        print(f"[Git] Push error: {e}")
+
+
 if __name__ == "__main__":
     t_status, t_fail = check_training_status()
     print(f"[Training Kernel] Status: {t_status} | Failure: {t_fail}")
@@ -104,8 +126,15 @@ if __name__ == "__main__":
 
     e_status, e_data = check_eval_benchmark()
     print(f"[Eval Kernel] Status: {e_status} | Has Data: {e_data is not None}")
+
     if e_data:
-        print("[Eval Results]:", json.dumps(e_data, indent=2))
+        print("\n[Eval Results Loaded]:", json.dumps(e_data, indent=2))
         base_res = e_data.get("base_qwen_1_5b", {})
         rl_res = e_data.get("goldenhour_rl_grpo", {})
         append_benchmark_to_readme(base_res, rl_res)
+        commit_and_push_readme()
+    elif "COMPLETE" in str(t_status):
+        print("\n[Pipeline] Training kernel is COMPLETE! Triggering evaluation pass...")
+        trigger_eval_kernel()
+    else:
+        print("\n[Pipeline] Training kernel is actively progressing. Monitor is standing by.")
