@@ -64,17 +64,43 @@ Evaluated across $N=100$ out-of-distribution crisis scenarios:
 
 ---
 
-## 3. The $0.00 Extra-Cost Architecture
+## 3. Empirical Training Telemetry & Systems Profiling (Weights & Biases)
+
+Live telemetry captured from run [`brisk-waterfall-3` (`lja961ve`)](https://wandb.ai/akshaykumarhudedmani-rl/goldenhour-rl/runs/lja961ve) across 50+ GRPO optimization steps on dual Tesla T4 GPUs:
+
+### Pillar 1: Multiprocessing Sandbox vs. Autoregressive Generation (>450x Speedup)
+![Multiprocessing Sandbox vs Generation](assets/image_f16a0d.png)
+* **Deterministic Verification:** The multiprocessing AST sandbox evaluates all 24 generated dispatch plans in **$<0.72$ seconds**, compared to **$250–350$ seconds** required for autoregressive token decoding on a Tesla T4.
+* **Safety First:** Hard 2.0-second timeout guards and AST static analysis prevent rogue infinite loops or arbitrary system calls.
+
+### Pillar 2: Verifier Reward Mean & Reward Spread Doubling ($\sigma: 0.105 \to 0.205$)
+![Verifier Reward Progression](assets/image_f17d71.png)
+* **Policy Discovery:** `train/rewards/verifier_reward_func/mean` steadily ascends toward positive territory as the model learns to respect ventilator capacities and Golden-Hour transit windows.
+* **Doubled Exploration Spread:** Within-group standard deviation doubles from $\sigma = 0.105$ to $\sigma = 0.205$, confirming that policy completions differentiate into clearly superior invariant-passing plans ($A_i > 0$).
+
+### Pillar 3: Zero Dead Batches ($\text{frac\_reward\_zero\_std} = 0.0$) & Natural Termination
+![Zero Dead Batches and Terminated Length](assets/image_f17dac.png)
+* **100% Productive Policy Gradients:** `train/frac_reward_zero_std` is flatlined at **$0.0$** across all steps, proving every single prompt group ($G=6$) has non-zero reward variance ($\sigma > 0$), resulting in zero wasted gradient updates.
+* **Natural Reasoning Termination:** Naturally terminated completions finish with `<|im_end|>` in **$\sim 390$ tokens**, well within the safety ceiling.
+
+### Pillar 4: Computational Parsimony — Eliminating Reasoning Bloat ($-9.2\%$ Clipped Ratio)
+![Computational Parsimony](assets/image_f1806f.png)
+* **Compression Dynamics:** `train/completions/clipped_ratio` drops from **$87.5\%$ down to $78.3\%$** as GRPO penalizes rambling and rewards concise $<200$-word `<think>` traces.
+* **Reduced Step Latency:** Rollout generation latency accelerates by over **$26$ seconds per step** as completions become concise.
+
+---
+
+## 4. The $0.00 Extra-Cost Architecture
 
 | Resource Tier | Cost | Hardware Target | Purpose |
-| :--- | :---: | :--- | :--- |
+| :--- | :--- | :--- | :--- |
 | **Tier 1: Local Machine** | **$0.00** | Any CPU / 4GB+ Laptop | Scenario synthesis, deterministic sandbox verifier, and unit tests via `pytest`. |
-| **Tier 2: Free Cloud GPU** | **$0.00** | Kaggle (2x T4 32GB) or Google Colab (T4 16GB) | 2-hour Unsloth 4-bit QLoRA + GRPO training loop (Peak VRAM: ~8.4 GB). |
+| **Tier 2: Free Cloud GPU** | **$0.00** | Kaggle (2x T4 32GB) or Google Colab (T4 16GB) | 2-hour Unsloth 4-bit QLoRA + GRPO training loop (Peak VRAM: 5.27 GB). |
 | **Tier 3: HF Space** | **$0.00** | Hugging Face Spaces | Live telemetry visualization dashboard. |
 
 ---
 
-## 4. Quickstart & Local Setup
+## 5. Quickstart & Local Setup
 
 ### Installation
 ```bash
@@ -123,7 +149,7 @@ python spaces/app.py
 
 ---
 
-## 5. Cloud GPU Training (Kaggle / Colab)
+## 6. Cloud GPU Training (Kaggle / Colab)
 
 To train on a free 16GB T4 GPU:
 
@@ -142,7 +168,7 @@ To train on a free 16GB T4 GPU:
 
 ---
 
-## 6. Repository Structure
+## 7. Repository Structure
 
 ```
 goldenhour-rl/
@@ -151,6 +177,11 @@ goldenhour-rl/
 ├── pyproject.toml                  # Standards-compliant package definition
 ├── requirements.txt                # Pinned dependencies
 ├── README.md                       # Documentation & benchmarks
+├── assets/                         # Empirical W&B telemetry charts
+│   ├── image_f16a0d.png            # Multiprocessing sandbox vs generation latency
+│   ├── image_f17d71.png            # Verifier reward mean & spread doubling
+│   ├── image_f17dac.png            # Zero dead batches & mean terminated length
+│   └── image_f1806f.png            # Computational parsimony & token compression
 ├── goldenhour_rl/
 │   ├── data/
 │   │   └── crisis_generator.py     # Guaranteed-feasible emergency state synthesizer
@@ -165,6 +196,9 @@ goldenhour-rl/
 ├── spaces/
 │   ├── app.py                      # Interactive Gradio Telemetry Benchmark UI
 │   └── requirements.txt            # Hugging Face Spaces dependencies
+├── scripts/
+│   ├── package_release.py          # Builds clean release zip excluding secrets
+│   └── generate_telemetry_charts.py # Generates 300-DPI publication charts
 ├── tests/
 │   ├── test_generator.py           # Mathematical feasibility invariant tests
 │   └── test_sandbox.py             # AST security, timeouts & invariant unit tests
@@ -173,6 +207,6 @@ goldenhour-rl/
 
 ---
 
-## 7. License
+## 8. License
 
 Released under the [MIT License](LICENSE).

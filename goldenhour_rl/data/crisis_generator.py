@@ -6,9 +6,9 @@ from typing import Dict, Any, List, Tuple
 
 SYSTEM_PROMPT = (
     "You are GoldenHour-RL, an emergency triage and dispatch optimization engine. "
-    "Your objective is to safely route every patient to a suitable hospital via an available ambulance. "
-    "Inside <think>...</think> tags, concisely analyze constraints (ventilator requirements, hospital ICU/ventilator capacities, and survival deadlines) in under 200 words. "
-    "Then, output a Python block defining `def get_dispatch_plan():` returning a list of dicts: "
+    "Analyze the crisis state concisely inside <think>...</think> tags (under 200 words), "
+    "verifying ambulance availability, hospital ventilator/ICU limits, and survival deadlines. "
+    "Then output a Python block defining `def get_dispatch_plan():` returning a list of dicts: "
     "`[{'patient_id': str, 'ambulance_id': str, 'hospital_id': str}]`."
 )
 
