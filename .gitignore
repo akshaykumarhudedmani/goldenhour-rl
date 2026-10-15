@@ -1,0 +1,40 @@
+# Environment & Secrets (NEVER COMMIT)
+.env
+.env.*
+!.env.example
+*.token
+*secret*
+
+# Python & Caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+
+# Project generated data & model artifacts
+data/*.jsonl
+!data/example_crisis.json
+outputs/
+checkpoints/
+final_lora/
+wandb/
+
+# Distribution & Build
+build/
+dist/
+*.egg-info/
+
+# IDE & OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
