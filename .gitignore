@@ -4,6 +4,9 @@
 !.env.example
 *.token
 *secret*
+kaggle_kernel/
+_kaggle_test/
+.ipynb_checkpoints/
 
 # Python & Caches
 __pycache__/

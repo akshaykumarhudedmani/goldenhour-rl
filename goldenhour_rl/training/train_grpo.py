@@ -58,6 +58,10 @@ def run_training(args):
         fast_inference=False,
     )
 
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+        tokenizer.pad_token_id = tokenizer.eos_token_id
+
     model = FastLanguageModel.get_peft_model(
         model,
         r=16,
