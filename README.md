@@ -69,7 +69,7 @@ Evaluated across $N=100$ out-of-distribution crisis scenarios (`--dry_run` basel
 
 ## 3. Empirical Training Telemetry & Systems Profiling (Weights & Biases)
 
-Live telemetry captured from run [`brisk-waterfall-3` (`lja961ve`)](https://wandb.ai/akshaykumarhudedmani-rl/goldenhour-rl/runs/lja961ve) across 50+ GRPO optimization steps on dual Tesla T4 GPUs:
+Live telemetry captured from run [`brisk-waterfall-3` (`lja961ve`)](https://wandb.ai/akshaykumarhudedmani-rl/goldenhour-rl/runs/lja961ve) across 100 GRPO optimization steps (4.47M tokens processed, 1.33 epochs) on dual Tesla T4 GPUs:
 
 ### Pillar 1: Multiprocessing Sandbox vs. Autoregressive Generation (>450x Speedup)
 ![Multiprocessing Sandbox vs Generation](assets/image_f16a0d.png)
