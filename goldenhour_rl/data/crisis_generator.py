@@ -156,7 +156,7 @@ def generate_scenario(seed: int) -> Dict[str, Any]:
     prompt_text = (
         f"{SYSTEM_PROMPT}\n\n"
         f"### EMERGENCY TELEMETRY STATE:\n"
-        f"```json\n{json.dumps(state, indent=2)}\n```"
+        f"```json\n{json.dumps(state)}\n```"
     )
     return {
         "prompt": prompt_text,

@@ -53,7 +53,7 @@ def run_training(args):
     print(f"[GoldenHour-RL] Initializing Unsloth 4-bit model: {args.model_name}")
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name=args.model_name,
-        max_seq_length=2048,
+        max_seq_length=4096,
         load_in_4bit=True,
         fast_inference=False,
     )
@@ -80,8 +80,8 @@ def run_training(args):
         per_device_train_batch_size=1,
         gradient_accumulation_steps=4,
         num_generations=6,
-        max_prompt_length=768,
-        max_completion_length=768,
+        max_prompt_length=1024,
+        max_completion_length=512,
         max_steps=args.max_steps,
         logging_steps=5,
         save_steps=50,
