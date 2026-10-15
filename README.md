@@ -46,8 +46,10 @@ Standard LLMs hallucinate when asked to coordinate emergency medical logistics: 
 ```
 
 ### Why GRPO over PPO?
-* **Eliminates the Critic Network:** Traditional Actor-Critic PPO requires holding a separate value model in GPU VRAM. GRPO computes advantages relative to group completions ($G=6$), cutting training VRAM by **~45%** and enabling training on a single free 16GB T4 GPU.
+* **Eliminates the Critic Network:** Traditional Actor-Critic PPO requires holding a separate value model in GPU VRAM. GRPO computes advantages relative to group completions ($G=6$), cutting training VRAM by **>67%** (measured **5.27 GB peak VRAM** on Kaggle Tesla T4) vs ~16+ GB for Actor-Critic PPO.
 * **Deterministic Life-Support Invariants:** Replaces noisy LLM-as-a-judge with mathematical ground-truth verification.
+* **Trained LoRA Weights:** [Hugging Face Hub `akshaykumarhudedmani/goldenhour-rl`](https://huggingface.co/akshaykumarhudedmani/goldenhour-rl)
+* **Live Experiment Telemetry:** [Weights & Biases Dashboard `goldenhour-rl`](https://wandb.ai/akshaykumarhudedmani-rl/goldenhour-rl)
 
 ---
 
