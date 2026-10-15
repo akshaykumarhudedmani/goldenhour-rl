@@ -7,6 +7,8 @@
 kaggle_kernel/
 _kaggle_test/
 .ipynb_checkpoints/
+poll_wandb.py
+check_wandb.py
 
 # Python & Caches
 __pycache__/
