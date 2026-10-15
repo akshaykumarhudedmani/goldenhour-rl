@@ -5,6 +5,7 @@
 *.token
 *secret*
 kaggle_kernel/
+kaggle_eval/
 _kaggle_test/
 .ipynb_checkpoints/
 scripts/poll_wandb.py
