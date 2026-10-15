@@ -81,7 +81,7 @@ def run_training(args):
         gradient_accumulation_steps=4,
         num_generations=6,
         max_prompt_length=1024,
-        max_completion_length=512,
+        max_completion_length=768,
         max_steps=args.max_steps,
         logging_steps=5,
         save_steps=50,

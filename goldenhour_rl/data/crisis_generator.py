@@ -7,8 +7,7 @@ from typing import Dict, Any, List, Tuple
 SYSTEM_PROMPT = (
     "You are GoldenHour-RL, an emergency triage and dispatch optimization engine. "
     "Your objective is to safely route every patient to a suitable hospital via an available ambulance. "
-    "First, analyze the emergency telemetry state inside <think>...</think> tags. "
-    "Verify patient ventilator needs, survival deadlines, ambulance assignments, and hospital capacity limits (ICU beds and ventilators). "
+    "Inside <think>...</think> tags, concisely analyze constraints (ventilator requirements, hospital ICU/ventilator capacities, and survival deadlines) in under 200 words. "
     "Then, output a Python block defining `def get_dispatch_plan():` returning a list of dicts: "
     "`[{'patient_id': str, 'ambulance_id': str, 'hospital_id': str}]`."
 )
@@ -17,11 +16,13 @@ SYSTEM_PROMPT = (
 def _build_guaranteed_feasible_scenario(rng: random.Random, seed: int) -> Tuple[Dict[str, Any], List[Dict[str, str]]]:
     """
     Constructs an emergency dispatch scenario with a mathematically guaranteed valid solution.
-    Generates realistic bottlenecks, scarce life-support resources, and competing routes.
+    Eliminates statistical cue leakage: background routes and reference routes share the same
+    ETA distribution, and realistic trap routes (fast routes to full or unequipped hospitals) are injected.
+    Scale is randomized across hospital counts (2 to 4) and patient counts (3 to 5).
     """
+    num_hospitals = rng.randint(2, 4)
     num_patients = rng.randint(3, 5)
     num_ambulances = num_patients + rng.randint(0, 2)
-    num_hospitals = 3
 
     # Generate hospitals with finite life-support capacity
     hospitals = {}
@@ -29,7 +30,7 @@ def _build_guaranteed_feasible_scenario(rng: random.Random, seed: int) -> Tuple[
         h_id = f"HOSP_{h+1}"
         hospitals[h_id] = {
             "icu_beds": rng.randint(1, 3),
-            "ventilators": rng.randint(1, 2),
+            "ventilators": rng.randint(0, 2),
         }
 
     # Ensure total network capacity is sufficient for all patients
@@ -39,7 +40,12 @@ def _build_guaranteed_feasible_scenario(rng: random.Random, seed: int) -> Tuple[
         hospitals[target_h]["icu_beds"] += 1
         total_icu += 1
 
+    # Ensure at least one hospital has ventilators
     total_vents = sum(h["ventilators"] for h in hospitals.values())
+    if total_vents == 0:
+        target_h = rng.choice(list(hospitals.keys()))
+        hospitals[target_h]["ventilators"] = rng.randint(1, 2)
+        total_vents = hospitals[target_h]["ventilators"]
 
     # Generate patients
     patients = []
@@ -56,11 +62,9 @@ def _build_guaranteed_feasible_scenario(rng: random.Random, seed: int) -> Tuple[
         if needs_vent:
             vent_needed_count += 1
             severity = 1
-            # Tight Golden-Hour window (25 to 45 mins)
             survival_window = rng.randint(25, 45)
         else:
             severity = rng.choice([2, 3])
-            # Moderate window (45 to 75 mins)
             survival_window = rng.randint(45, 75)
 
         patients.append({
@@ -79,7 +83,6 @@ def _build_guaranteed_feasible_scenario(rng: random.Random, seed: int) -> Tuple[
 
     for idx, pat in enumerate(patients):
         amb_id = available_ambulances[idx]
-        # Find candidate hospitals that have remaining capacity
         valid_targets = []
         for h_id, cap in hospitals.items():
             used = hosp_usage[h_id]
@@ -113,6 +116,9 @@ def _build_guaranteed_feasible_scenario(rng: random.Random, seed: int) -> Tuple[
         })
 
     # Build transit distance/ETA matrix for all ambulances, patients, and hospitals
+    # Zero Statistical Leakage:
+    # 1. Background routes and reference routes share the identical support domain [10, 55].
+    # 2. Trap routes with short transit times are actively injected for invalid hospital pairings.
     ref_map = {(item["patient_id"], item["ambulance_id"]): item["hospital_id"] for item in ref_solution}
     ambulances = []
 
@@ -123,15 +129,19 @@ def _build_guaranteed_feasible_scenario(rng: random.Random, seed: int) -> Tuple[
             p_id = pat["patient_id"]
             routes[p_id] = {}
             for h_id in hospitals:
-                # Random transit time between 15 and 65 minutes
-                routes[p_id][h_id] = rng.randint(15, 65)
+                routes[p_id][h_id] = rng.randint(10, 55)
 
-            # Ensure the reference assignment route is strictly within Golden-Hour survival window
+            # Reference route guarantee
             if (p_id, amb_id) in ref_map:
                 target_hosp = ref_map[(p_id, amb_id)]
-                safe_max = max(10, pat["survival_window_mins"] - 6)
-                safe_min = min(8, safe_max - 2)
-                routes[p_id][target_hosp] = rng.randint(safe_min, safe_max)
+                safe_margin = rng.randint(5, 12)
+                routes[p_id][target_hosp] = max(8, min(pat["survival_window_mins"] - safe_margin, 38))
+            else:
+                # Inject distractor/trap routes: fast ETA to full or unequipped hospitals
+                # This prevents the model from relying on an "ETA < 15" heuristic
+                if rng.random() < 0.40:
+                    trap_hosp = rng.choice(list(hospitals.keys()))
+                    routes[p_id][trap_hosp] = rng.randint(8, 18)
 
         ambulances.append({
             "ambulance_id": amb_id,

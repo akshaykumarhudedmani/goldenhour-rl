@@ -4,7 +4,8 @@ from goldenhour_rl.sandbox.executor import execute_dispatch_code
 from goldenhour_rl.sandbox.verifier import verify_dispatch_plan
 
 THINK_PATTERN = re.compile(r"<think>(.*?)</think>", flags=re.DOTALL)
-CODE_PATTERN = re.compile(r"```python\s*(.*?)\s*```", flags=re.DOTALL)
+CODE_PATTERN = re.compile(r"```python\s*(.*?)(?:```|$)", flags=re.DOTALL)
+CLOSED_CODE_PATTERN = re.compile(r"```python\s*(.*?)\s*```", flags=re.DOTALL)
 
 
 def _extract_completion_text(comp: Any) -> str:
@@ -23,7 +24,8 @@ def format_reward_func(prompts: List[Any], completions: List[Any], **kwargs) -> 
     Evaluates format compliance:
     - Enforces reasoning trace inside <think>...</think> tags.
     - Enforces executable python block inside ```python ... ```.
-    - Gives a parsimony bonus for concise reasoning (avoiding token bloat).
+    - Robust to terminal backtick clipping while rewarding properly closed code blocks.
+    - Rewards concise, non-bloated reasoning (under 200 words / 800 chars).
     """
     rewards = []
     for comp in completions:
@@ -31,20 +33,39 @@ def format_reward_func(prompts: List[Any], completions: List[Any], **kwargs) -> 
         think_match = THINK_PATTERN.search(text)
         code_match = CODE_PATTERN.search(text)
 
-        if think_match and code_match:
+        if not think_match and not code_match:
+            rewards.append(-1.5)
+            continue
+
+        score = 0.0
+
+        # Think tag formatting
+        if think_match:
+            score += 0.4
             think_text = think_match.group(1).strip()
             think_len = len(think_text)
-            code_text = code_match.group(1).strip()
-
-            base_reward = 0.5
-            # Parsimony bonus: encourage thoughtful reasoning without infinite looping
-            parsimony_bonus = 0.3 if (40 <= think_len <= 900) else 0.0
-            # Structure bonus: ensures target function header exists
-            func_bonus = 0.2 if "def get_dispatch_plan" in code_text else 0.0
-
-            rewards.append(base_reward + parsimony_bonus + func_bonus)
+            # Parsimony bonus: reward concise reasoning, penalize token bloat
+            if 30 <= think_len <= 800:
+                score += 0.2
         else:
-            rewards.append(-1.5)
+            score -= 0.6
+
+        # Code block formatting
+        if code_match:
+            code_text = code_match.group(1).strip()
+            # Reward closed code block higher than clipped unclosed block
+            if CLOSED_CODE_PATTERN.search(text):
+                score += 0.3
+            else:
+                score += 0.1
+
+            if "def get_dispatch_plan" in code_text:
+                score += 0.2
+        else:
+            score -= 0.6
+
+        rewards.append(round(score, 3))
+
     return rewards
 
 
@@ -56,7 +77,6 @@ def verifier_reward_func(prompts: List[Any], completions: List[Any], state_json:
     - Graded penalty shaping for constraint violations (ICU/vent overflow, double-booking, SLA breach).
     """
     if state_json is None:
-        # Fallback if state_json is provided inside kwargs
         state_json = kwargs.get("state_json", [None] * len(completions))
 
     rewards = []
@@ -73,10 +93,14 @@ def verifier_reward_func(prompts: List[Any], completions: List[Any], state_json:
             continue
 
         code_str = code_match.group(1).strip()
+        if not code_str:
+            rewards.append(-1.0)
+            continue
+
         exec_res = execute_dispatch_code(code_str, timeout_sec=2.0)
 
         if not exec_res["ok"]:
-            # Penalize code crashes or timeouts
+            # Penalize syntax error, execution crash, or timeout
             rewards.append(-0.8)
             continue
 
@@ -84,10 +108,10 @@ def verifier_reward_func(prompts: List[Any], completions: List[Any], state_json:
 
         if ver_res["valid"]:
             # +2.0 for 100% physically valid schedule + SLA margin bonus
-            rewards.append(2.0 + 0.5 * ver_res["sla_score"])
+            rewards.append(round(2.0 + 0.5 * ver_res["sla_score"], 4))
         else:
             # Partial shaping penalty based on number of violations
             penalty = min(1.2, 0.25 * len(ver_res["violations"]))
-            rewards.append(-0.2 - penalty)
+            rewards.append(round(-0.2 - penalty, 4))
 
     return rewards
