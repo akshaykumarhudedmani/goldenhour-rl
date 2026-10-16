@@ -3,6 +3,7 @@ import io
 import json
 import math
 import collections
+import inspect
 import itertools
 import multiprocessing
 import threading
@@ -127,6 +128,8 @@ def execute_dispatch_code(code_str: str, timeout_sec: float = 2.0, state_str: st
             "math": math,
             "data": parsed_state,
             "state": parsed_state,
+            "scenario": parsed_state,
+            "telemetry": parsed_state,
             "emergency_telemetry": parsed_state,
         }
         try:
@@ -138,10 +141,23 @@ def execute_dispatch_code(code_str: str, timeout_sec: float = 2.0, state_str: st
             if not callable(dispatch_fn):
                 result = {"ok": False, "error": "get_dispatch_plan is not callable", "plan": None}
                 return
+
             try:
-                plan = dispatch_fn()
-            except TypeError:
-                plan = dispatch_fn(parsed_state)
+                sig = inspect.signature(dispatch_fn)
+                if len(sig.parameters) >= 1:
+                    plan = dispatch_fn(parsed_state)
+                else:
+                    plan = dispatch_fn()
+            except (TypeError, ValueError):
+                try:
+                    plan = dispatch_fn()
+                except TypeError:
+                    plan = dispatch_fn(parsed_state)
+
+            if not isinstance(plan, list):
+                result = {"ok": False, "error": f"Plan did not return a list, got {type(plan).__name__}", "plan": None}
+                return
+
             result = {"ok": True, "error": None, "plan": plan}
         except Exception as exc:
             result = {"ok": False, "error": f"{type(exc).__name__}: {str(exc)}", "plan": None}

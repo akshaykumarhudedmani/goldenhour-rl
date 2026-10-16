@@ -137,3 +137,26 @@ def test_global_data_and_parameterized_dispatch_plan():
     assert res2["ok"] is True
     assert res2["plan"] == []
 
+
+def test_reward_hacking_eliminated():
+    """Verify that crashing code is strictly worse than partial plans, eliminating the reward hack."""
+    sample = generate_scenario(seed=808)
+
+    # 1. Crashing code
+    crash_comp = "<think>Plan</think>\n```python\ndef get_dispatch_plan():\n    raise ValueError('crash')\n```"
+    ver_crash = verifier_reward_func([sample["prompt"]], [crash_comp], state_json=[sample["state_json"]])[0]
+
+    # 2. Missing get_dispatch_plan
+    hollow_comp = "<think>Plan</think>\n```python\nimport json\nx = 1\n```"
+    ver_hollow = verifier_reward_func([sample["prompt"]], [hollow_comp], state_json=[sample["state_json"]])[0]
+
+    # 3. Valid reference solution
+    ref_plan = json.loads(sample["reference_solution"])
+    valid_comp = f"<think>Plan</think>\n```python\ndef get_dispatch_plan(state):\n    return {json.dumps(ref_plan)}\n```"
+    ver_valid = verifier_reward_func([sample["prompt"]], [valid_comp], state_json=[sample["state_json"]])[0]
+
+    # Assert strictly monotonic gradient: crashing (-1.5) == hollow (-1.5) < valid (>= 2.0)
+    assert ver_crash == -1.5
+    assert ver_hollow == -1.5
+    assert ver_valid >= 2.0
+
