@@ -43,13 +43,10 @@ def check_eval_benchmark():
     out_dir = Path(__file__).resolve().parent.parent / "kaggle_eval" / "out"
     out_dir.mkdir(parents=True, exist_ok=True)
     summary_file = out_dir / "eval_summary.json"
-    if summary_file.exists():
-        with open(summary_file, "r", encoding="utf-8") as f:
-            return status, json.load(f)
     
     if "COMPLETE" in str(status):
         try:
-            api.kernels_output(EVAL_KERNEL_ID, path=str(out_dir))
+            api.kernels_output(EVAL_KERNEL_ID, path=str(out_dir), force=True)
             for p in out_dir.rglob("eval_summary.json"):
                 if p.is_file():
                     with open(p, "r", encoding="utf-8") as f:
@@ -83,8 +80,8 @@ def append_benchmark_to_readme(base_metrics, rl_metrics):
         "| Strategy | Engine Type | Executable Plan % | Zero-Violation Rate | Patient Survival (SLA) | ICU Bed Overflows | Ventilator Overflows | Total Violations |\n"
         "| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |\n"
         "| **Greedy Nearest Hospital** | Programmatic Heuristic Baseline | 100.0% | 34.0% | 98.5% | 66 | 47 | 119 |\n"
-        f"| **Base Qwen-1.5B-Instruct** | Zero-Shot Pre-Trained LLM (Pass@4) | {base_metrics.get('Executable Plan %', '0.0%')} | {base_metrics.get('Zero-Viol %', '0.0%')} | {base_metrics.get('Survival %', '0.0%')} | {base_metrics.get('ICU Overflows', 0)} | {base_metrics.get('Vent Overflows', 0)} | {base_metrics.get('Total Violations', 'N/A')} |\n"
-        f"| **GoldenHour-RL (Step 120)** | Verifier-Guided GRPO LoRA (Pass@4) | **{rl_metrics.get('Executable Plan %', 'N/A')}** | **{rl_metrics.get('Zero-Viol %', 'N/A')}** | **{rl_metrics.get('Survival %', 'N/A')}** | **{rl_metrics.get('ICU Overflows', 'N/A')}** | **{rl_metrics.get('Vent Overflows', 'N/A')}** | **{rl_metrics.get('Total Violations', 'N/A')}** |\n"
+        f"| **Base Qwen-1.5B-Instruct** | Zero-Shot Pre-Trained LLM (Pass@1) | {base_metrics.get('Executable Plan %', '0.0%')} | {base_metrics.get('Zero-Viol %', '0.0%')} | {base_metrics.get('Survival %', '0.0%')} | {base_metrics.get('ICU Overflows', 0)} | {base_metrics.get('Vent Overflows', 0)} | {base_metrics.get('Total Violations', 'N/A')} |\n"
+        f"| **GoldenHour-RL (Step 120)** | Verifier-Guided GRPO LoRA (Pass@1) | **{rl_metrics.get('Executable Plan %', 'N/A')}** | **{rl_metrics.get('Zero-Viol %', 'N/A')}** | **{rl_metrics.get('Survival %', 'N/A')}** | **{rl_metrics.get('ICU Overflows', 'N/A')}** | **{rl_metrics.get('Vent Overflows', 'N/A')}** | **{rl_metrics.get('Total Violations', 'N/A')}** |\n"
         "| **Oracle Target Schedule** | Ground-Truth Solver (Upper Bound) | 100.0% | **100.0%** | **100.0%** | **0** | **0** | **0** |"
     )
 

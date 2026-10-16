@@ -1,6 +1,14 @@
 import ast
+import io
+import json
+import math
+import collections
+import itertools
 import multiprocessing
 from typing import Dict, Any, Optional
+
+# Safe modules allowed to be imported in generated dispatch functions
+SAFE_MODULES = {"json", "math", "re", "collections", "itertools"}
 
 # Safe builtins allowed in generated dispatch functions
 SAFE_BUILTINS = {
@@ -21,20 +29,14 @@ SAFE_BUILTINS = {
     "float": float,
     "str": str,
     "bool": bool,
+    "print": lambda *args, **kwargs: None,
 }
 
-BANNED_AST_NODES = (
-    ast.Import,
-    ast.ImportFrom,
-)
-
 BANNED_NAMES = {
-    "open",
     "eval",
     "exec",
     "compile",
     "__import__",
-    "input",
     "globals",
     "locals",
     "vars",
@@ -42,6 +44,20 @@ BANNED_NAMES = {
     "setattr",
     "delattr",
 }
+
+
+def create_safe_open(state_str: str = "{}"):
+    def _safe_open(file, mode="r", *args, **kwargs):
+        if any(m in mode for m in ("w", "a", "+", "x")):
+            raise PermissionError("Write access is forbidden in sandbox.")
+        return io.StringIO(state_str)
+    return _safe_open
+
+
+def create_safe_input(state_str: str = "{}"):
+    def _safe_input(prompt=None):
+        return state_str
+    return _safe_input
 
 
 def validate_ast(code_str: str) -> Optional[str]:
@@ -55,8 +71,16 @@ def validate_ast(code_str: str) -> Optional[str]:
         return f"SyntaxError: {e.msg} at line {e.lineno}"
 
     for node in ast.walk(tree):
-        if isinstance(node, BANNED_AST_NODES):
-            return "SecurityViolation: Imports are strictly forbidden in dispatch plans."
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                root_pkg = alias.name.split(".")[0]
+                if root_pkg not in SAFE_MODULES:
+                    return f"SecurityViolation: Import of '{alias.name}' is forbidden."
+        elif isinstance(node, ast.ImportFrom):
+            if node.module:
+                root_pkg = node.module.split(".")[0]
+                if root_pkg not in SAFE_MODULES:
+                    return f"SecurityViolation: Import from '{node.module}' is forbidden."
         if isinstance(node, ast.Name) and node.id in BANNED_NAMES:
             return f"SecurityViolation: Use of banned function '{node.id}' is forbidden."
         if isinstance(node, ast.Attribute) and (node.attr.startswith("__") or node.attr in BANNED_NAMES):
@@ -65,11 +89,30 @@ def validate_ast(code_str: str) -> Optional[str]:
     return None
 
 
-def _worker_exec(code_str: str, result_queue: multiprocessing.Queue):
+def _worker_exec(code_str: str, state_str: str, result_queue: multiprocessing.Queue):
     """Worker process target that executes untrusted code in a sandboxed namespace."""
-    namespace = {}
+    builtins = dict(SAFE_BUILTINS)
+    builtins["open"] = create_safe_open(state_str)
+    builtins["input"] = create_safe_input(state_str)
+    builtins["__import__"] = lambda name, *args, **kwargs: (
+        __import__(name, *args, **kwargs) if name in SAFE_MODULES else (_ for _ in ()).throw(ImportError(f"Import {name} not allowed"))
+    )
+    parsed_state = {}
     try:
-        exec(code_str, {"__builtins__": SAFE_BUILTINS}, namespace)
+        parsed_state = json.loads(state_str) if state_str else {}
+    except Exception:
+        pass
+
+    namespace = {
+        "__builtins__": builtins,
+        "json": json,
+        "math": math,
+        "data": parsed_state,
+        "state": parsed_state,
+        "emergency_telemetry": parsed_state,
+    }
+    try:
+        exec(code_str, namespace, namespace)
         if "get_dispatch_plan" not in namespace:
             result_queue.put({"ok": False, "error": "Missing get_dispatch_plan() function", "plan": None})
             return
@@ -77,16 +120,20 @@ def _worker_exec(code_str: str, result_queue: multiprocessing.Queue):
         if not callable(dispatch_fn):
             result_queue.put({"ok": False, "error": "get_dispatch_plan is not callable", "plan": None})
             return
-        plan = dispatch_fn()
+        try:
+            plan = dispatch_fn()
+        except TypeError:
+            plan = dispatch_fn(parsed_state)
         result_queue.put({"ok": True, "error": None, "plan": plan})
     except Exception as exc:
         result_queue.put({"ok": False, "error": f"{type(exc).__name__}: {str(exc)}", "plan": None})
 
 
-def execute_dispatch_code(code_str: str, timeout_sec: float = 2.0) -> Dict[str, Any]:
+def execute_dispatch_code(code_str: str, timeout_sec: float = 2.0, state_str: str = "{}") -> Dict[str, Any]:
     """
     Executes generated Python code inside a sandboxed multiprocessing boundary.
     Enforces AST security checks and hard timeout limits (default: 2.0 seconds).
+    Provides in-memory virtual state_str for open() and input() calls.
     """
     if not code_str or not code_str.strip():
         return {"ok": False, "error": "EmptyCodeBlock", "plan": None}
@@ -100,7 +147,7 @@ def execute_dispatch_code(code_str: str, timeout_sec: float = 2.0) -> Dict[str, 
     try:
         ctx = multiprocessing.get_context("spawn")
         queue = ctx.Queue()
-        proc = ctx.Process(target=_worker_exec, args=(code_str, queue))
+        proc = ctx.Process(target=_worker_exec, args=(code_str, state_str, queue))
         proc.start()
         proc.join(timeout=timeout_sec)
 
@@ -115,15 +162,37 @@ def execute_dispatch_code(code_str: str, timeout_sec: float = 2.0) -> Dict[str, 
         pass
 
     # Step 3: Resilient safe fallback in AST-validated sandboxed namespace
-    namespace = {}
+    builtins = dict(SAFE_BUILTINS)
+    builtins["open"] = create_safe_open(state_str)
+    builtins["input"] = create_safe_input(state_str)
+    builtins["__import__"] = lambda name, *args, **kwargs: (
+        __import__(name, *args, **kwargs) if name in SAFE_MODULES else (_ for _ in ()).throw(ImportError(f"Import {name} not allowed"))
+    )
+    parsed_state = {}
     try:
-        exec(code_str, {"__builtins__": SAFE_BUILTINS}, namespace)
+        parsed_state = json.loads(state_str) if state_str else {}
+    except Exception:
+        pass
+
+    namespace = {
+        "__builtins__": builtins,
+        "json": json,
+        "math": math,
+        "data": parsed_state,
+        "state": parsed_state,
+        "emergency_telemetry": parsed_state,
+    }
+    try:
+        exec(code_str, namespace, namespace)
         if "get_dispatch_plan" not in namespace:
             return {"ok": False, "error": "Missing get_dispatch_plan() function", "plan": None}
         dispatch_fn = namespace["get_dispatch_plan"]
         if not callable(dispatch_fn):
             return {"ok": False, "error": "get_dispatch_plan is not callable", "plan": None}
-        plan = dispatch_fn()
+        try:
+            plan = dispatch_fn()
+        except TypeError:
+            plan = dispatch_fn(parsed_state)
         return {"ok": True, "error": None, "plan": plan}
     except Exception as exc:
         return {"ok": False, "error": f"{type(exc).__name__}: {str(exc)}", "plan": None}

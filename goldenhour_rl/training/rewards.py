@@ -97,7 +97,7 @@ def verifier_reward_func(prompts: List[Any], completions: List[Any], state_json:
             rewards.append(-1.0)
             continue
 
-        exec_res = execute_dispatch_code(code_str, timeout_sec=2.0)
+        exec_res = execute_dispatch_code(code_str, timeout_sec=2.0, state_str=s_json)
 
         if not exec_res["ok"]:
             # Penalize syntax error, execution crash, or timeout

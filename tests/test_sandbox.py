@@ -97,3 +97,43 @@ def test_malformed_completion_penalized():
         state_json=[sample["state_json"]]
     )
     assert ver_scores[0] < 0.0
+
+
+def test_virtual_file_and_input_execution():
+    """Verify that generated code using import json and open('telemetry.json') executes safely."""
+    sample = generate_scenario(seed=404)
+    code = (
+        "import json\n"
+        "def get_dispatch_plan():\n"
+        "    with open('emergency_telemetry.json', 'r') as f:\n"
+        "        data = json.load(f)\n"
+        "    return []\n"
+    )
+    res = execute_dispatch_code(code, timeout_sec=2.0, state_str=sample["state_json"])
+    assert res["ok"] is True
+    assert res["plan"] == []
+
+
+def test_global_data_and_parameterized_dispatch_plan():
+    """Verify that code using global data or get_dispatch_plan(data) executes safely."""
+    sample = generate_scenario(seed=505)
+    # 1. Global data access
+    code_global = (
+        "def get_dispatch_plan():\n"
+        "    p = data['patients']\n"
+        "    return []\n"
+    )
+    res1 = execute_dispatch_code(code_global, timeout_sec=2.0, state_str=sample["state_json"])
+    assert res1["ok"] is True
+    assert res1["plan"] == []
+
+    # 2. Parameterized get_dispatch_plan(state)
+    code_param = (
+        "def get_dispatch_plan(telemetry):\n"
+        "    p = telemetry['patients']\n"
+        "    return []\n"
+    )
+    res2 = execute_dispatch_code(code_param, timeout_sec=2.0, state_str=sample["state_json"])
+    assert res2["ok"] is True
+    assert res2["plan"] == []
+
