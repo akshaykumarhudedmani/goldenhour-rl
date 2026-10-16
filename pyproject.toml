@@ -28,3 +28,8 @@ dev = [
 demo = [
     "gradio>=4.0.0",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+norecursedirs = ["kaggle_eval", "kaggle_kernel", "_kaggle_test", "dist", "build", ".venv", "spaces"]
+
