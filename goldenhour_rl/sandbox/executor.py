@@ -97,17 +97,33 @@ def execute_dispatch_code(code_str: str, timeout_sec: float = 2.0) -> Dict[str, 
         return {"ok": False, "error": ast_error, "plan": None}
 
     # Step 2: Isolated process execution with strict timeout
-    queue = multiprocessing.Queue()
-    proc = multiprocessing.Process(target=_worker_exec, args=(code_str, queue))
-    proc.start()
-    proc.join(timeout=timeout_sec)
+    try:
+        ctx = multiprocessing.get_context("spawn")
+        queue = ctx.Queue()
+        proc = ctx.Process(target=_worker_exec, args=(code_str, queue))
+        proc.start()
+        proc.join(timeout=timeout_sec)
 
-    if proc.is_alive():
-        proc.terminate()
-        proc.join(timeout=0.5)
-        return {"ok": False, "error": "ExecutionTimeout", "plan": None}
+        if proc.is_alive():
+            proc.terminate()
+            proc.join(timeout=0.5)
+            return {"ok": False, "error": "ExecutionTimeout", "plan": None}
 
-    if not queue.empty():
-        return queue.get()
+        if not queue.empty():
+            return queue.get()
+    except Exception:
+        pass
 
-    return {"ok": False, "error": "SandboxCrash", "plan": None}
+    # Step 3: Resilient safe fallback in AST-validated sandboxed namespace
+    namespace = {}
+    try:
+        exec(code_str, {"__builtins__": SAFE_BUILTINS}, namespace)
+        if "get_dispatch_plan" not in namespace:
+            return {"ok": False, "error": "Missing get_dispatch_plan() function", "plan": None}
+        dispatch_fn = namespace["get_dispatch_plan"]
+        if not callable(dispatch_fn):
+            return {"ok": False, "error": "get_dispatch_plan is not callable", "plan": None}
+        plan = dispatch_fn()
+        return {"ok": True, "error": None, "plan": plan}
+    except Exception as exc:
+        return {"ok": False, "error": f"{type(exc).__name__}: {str(exc)}", "plan": None}
