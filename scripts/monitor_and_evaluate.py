@@ -86,8 +86,8 @@ def append_benchmark_to_readme(base_metrics, rl_metrics):
     )
 
     table_pattern = r"\| Strategy \| Engine Type \|.*?\n\| \*\*Oracle Target Schedule\*\* \| Ground-Truth Solver \(Upper Bound\) \|.*?\n"
-    if re.search(table_pattern, content):
-        content = re.sub(table_pattern, new_table + "\n", content, count=1)
+    if re.search(table_pattern, content, flags=re.DOTALL):
+        content = re.sub(table_pattern, new_table + "\n", content, count=1, flags=re.DOTALL)
         with open(readme_path, "w", encoding="utf-8") as f:
             f.write(content)
         print(f"[README] Successfully updated empirical LLM evaluation table in {readme_path.name}!")
