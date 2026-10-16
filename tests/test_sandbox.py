@@ -160,3 +160,22 @@ def test_reward_hacking_eliminated():
     assert ver_hollow == -1.5
     assert ver_valid >= 2.0
 
+
+def test_typing_and_safe_builtins_allowed():
+    """Verify that models importing typing and using safe functional builtins pass AST validation and execute."""
+    typed_code = (
+        "from typing import List, Dict, Optional\n"
+        "import heapq, collections, itertools\n"
+        "\n"
+        "def get_dispatch_plan(state: Optional[Dict] = None) -> List[Dict]:\n"
+        "    if state is None or not any(state.get('patients', [])):\n"
+        "        return []\n"
+        "    ans = [p for p in state['patients'] if isinstance(p, dict)]\n"
+        "    return []\n"
+    )
+    sample = generate_scenario(seed=909)
+    res = execute_dispatch_code(typed_code, timeout_sec=2.0, state_str=sample["state_json"])
+    assert res["ok"] is True
+    assert res["plan"] == []
+
+

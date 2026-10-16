@@ -10,7 +10,9 @@ import threading
 from typing import Dict, Any, Optional
 
 # Safe modules allowed to be imported in generated dispatch functions
-SAFE_MODULES = {"json", "math", "re", "collections", "itertools"}
+SAFE_MODULES = {
+    "json", "math", "re", "collections", "itertools", "heapq", "typing", "copy", "dataclasses", "enum"
+}
 
 # Safe builtins allowed in generated dispatch functions
 SAFE_BUILTINS = {
@@ -31,6 +33,14 @@ SAFE_BUILTINS = {
     "float": float,
     "str": str,
     "bool": bool,
+    "any": any,
+    "all": all,
+    "round": round,
+    "isinstance": isinstance,
+    "issubclass": issubclass,
+    "filter": filter,
+    "map": map,
+    "reversed": reversed,
     "print": lambda *args, **kwargs: None,
 }
 

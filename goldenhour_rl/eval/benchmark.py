@@ -166,7 +166,7 @@ def evaluate_model_on_dataset(
         with torch.no_grad():
             outputs = model.generate(
                 **inputs,
-                max_new_tokens=768,
+                max_new_tokens=1024,
                 temperature=0.6,
                 top_p=0.95,
                 do_sample=True,
