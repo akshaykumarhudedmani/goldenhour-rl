@@ -60,8 +60,8 @@ Evaluated across $N=100$ out-of-distribution crisis scenarios (`--dry_run` basel
 | Strategy | Engine Type | Executable Plan % | Zero-Violation Rate | Patient Survival (SLA) | ICU Bed Overflows | Ventilator Overflows | Total Violations |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
 | **Greedy Nearest Hospital** | Programmatic Heuristic Baseline | 100.0% | 34.0% | 98.5% | 66 | 47 | 119 |
-| **Base Qwen-1.5B-Instruct** | Zero-Shot Pre-Trained LLM (Pass@1) | 12.0% | 0.0% | 0.5% | 0 | 0 | 206 |
-| **GoldenHour-RL (Step 120)** | Verifier-Guided GRPO LoRA (Pass@1) | **14.0%** | **0.0%** | **0.5%** | **0** | **0** | **201** |
+| **Base Qwen-1.5B-Instruct** | Zero-Shot Pre-Trained LLM (Pass@1) | 10.0% | 0.0% | 2.5% | 0 | 0 | 198 |
+| **GoldenHour-RL (Step 120)** | Verifier-Guided GRPO LoRA (Pass@1) | **4.0%** | **0.0%** | **1.5%** | **1** | **0** | **201** |
 | **Oracle Target Schedule** | Ground-Truth Solver (Upper Bound) | 100.0% | **100.0%** | **100.0%** | **0** | **0** | **0** |
 
 > [!IMPORTANT]
