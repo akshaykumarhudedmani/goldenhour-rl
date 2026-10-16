@@ -42,8 +42,12 @@ def check_eval_benchmark():
     
     out_dir = Path(__file__).resolve().parent.parent / "kaggle_eval" / "out"
     out_dir.mkdir(parents=True, exist_ok=True)
+    summary_file = out_dir / "eval_summary.json"
+    if summary_file.exists():
+        with open(summary_file, "r", encoding="utf-8") as f:
+            return status, json.load(f)
     
-    if status == "COMPLETE":
+    if "COMPLETE" in str(status):
         try:
             api.kernels_output(EVAL_KERNEL_ID, path=str(out_dir))
             for p in out_dir.rglob("eval_summary.json"):
