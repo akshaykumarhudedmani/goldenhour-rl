@@ -5,6 +5,7 @@ import math
 import collections
 import itertools
 import multiprocessing
+import threading
 from typing import Dict, Any, Optional
 
 # Safe modules allowed to be imported in generated dispatch functions
@@ -89,51 +90,11 @@ def validate_ast(code_str: str) -> Optional[str]:
     return None
 
 
-def _worker_exec(code_str: str, state_str: str, result_queue: multiprocessing.Queue):
-    """Worker process target that executes untrusted code in a sandboxed namespace."""
-    builtins = dict(SAFE_BUILTINS)
-    builtins["open"] = create_safe_open(state_str)
-    builtins["input"] = create_safe_input(state_str)
-    builtins["__import__"] = lambda name, *args, **kwargs: (
-        __import__(name, *args, **kwargs) if name in SAFE_MODULES else (_ for _ in ()).throw(ImportError(f"Import {name} not allowed"))
-    )
-    parsed_state = {}
-    try:
-        parsed_state = json.loads(state_str) if state_str else {}
-    except Exception:
-        pass
-
-    namespace = {
-        "__builtins__": builtins,
-        "json": json,
-        "math": math,
-        "data": parsed_state,
-        "state": parsed_state,
-        "emergency_telemetry": parsed_state,
-    }
-    try:
-        exec(code_str, namespace, namespace)
-        if "get_dispatch_plan" not in namespace:
-            result_queue.put({"ok": False, "error": "Missing get_dispatch_plan() function", "plan": None})
-            return
-        dispatch_fn = namespace["get_dispatch_plan"]
-        if not callable(dispatch_fn):
-            result_queue.put({"ok": False, "error": "get_dispatch_plan is not callable", "plan": None})
-            return
-        try:
-            plan = dispatch_fn()
-        except TypeError:
-            plan = dispatch_fn(parsed_state)
-        result_queue.put({"ok": True, "error": None, "plan": plan})
-    except Exception as exc:
-        result_queue.put({"ok": False, "error": f"{type(exc).__name__}: {str(exc)}", "plan": None})
-
-
 def execute_dispatch_code(code_str: str, timeout_sec: float = 2.0, state_str: str = "{}") -> Dict[str, Any]:
     """
-    Executes generated Python code inside a sandboxed multiprocessing boundary.
+    Executes generated Python code inside an AST-validated, thread-isolated sandboxed namespace.
     Enforces AST security checks and hard timeout limits (default: 2.0 seconds).
-    Provides in-memory virtual state_str for open() and input() calls.
+    Provides in-memory virtual state_str for open(), input(), and pre-parsed telemetry state.
     """
     if not code_str or not code_str.strip():
         return {"ok": False, "error": "EmptyCodeBlock", "plan": None}
@@ -143,56 +104,54 @@ def execute_dispatch_code(code_str: str, timeout_sec: float = 2.0, state_str: st
     if ast_error:
         return {"ok": False, "error": ast_error, "plan": None}
 
-    # Step 2: Isolated process execution with strict timeout
-    try:
-        ctx = multiprocessing.get_context("spawn")
-        queue = ctx.Queue()
-        proc = ctx.Process(target=_worker_exec, args=(code_str, state_str, queue))
-        proc.start()
-        proc.join(timeout=timeout_sec)
+    # Step 2: Thread-isolated execution with strict timeout
+    result = {"ok": False, "error": "ExecutionTimeout", "plan": None}
 
-        if proc.is_alive():
-            proc.terminate()
-            proc.join(timeout=0.5)
-            return {"ok": False, "error": "ExecutionTimeout", "plan": None}
-
-        if not queue.empty():
-            return queue.get()
-    except Exception:
-        pass
-
-    # Step 3: Resilient safe fallback in AST-validated sandboxed namespace
-    builtins = dict(SAFE_BUILTINS)
-    builtins["open"] = create_safe_open(state_str)
-    builtins["input"] = create_safe_input(state_str)
-    builtins["__import__"] = lambda name, *args, **kwargs: (
-        __import__(name, *args, **kwargs) if name in SAFE_MODULES else (_ for _ in ()).throw(ImportError(f"Import {name} not allowed"))
-    )
-    parsed_state = {}
-    try:
-        parsed_state = json.loads(state_str) if state_str else {}
-    except Exception:
-        pass
-
-    namespace = {
-        "__builtins__": builtins,
-        "json": json,
-        "math": math,
-        "data": parsed_state,
-        "state": parsed_state,
-        "emergency_telemetry": parsed_state,
-    }
-    try:
-        exec(code_str, namespace, namespace)
-        if "get_dispatch_plan" not in namespace:
-            return {"ok": False, "error": "Missing get_dispatch_plan() function", "plan": None}
-        dispatch_fn = namespace["get_dispatch_plan"]
-        if not callable(dispatch_fn):
-            return {"ok": False, "error": "get_dispatch_plan is not callable", "plan": None}
+    def _sandboxed_runner():
+        nonlocal result
+        builtins = dict(SAFE_BUILTINS)
+        builtins["open"] = create_safe_open(state_str)
+        builtins["input"] = create_safe_input(state_str)
+        builtins["__import__"] = lambda name, *args, **kwargs: (
+            __import__(name, *args, **kwargs) if name in SAFE_MODULES else (_ for _ in ()).throw(ImportError(f"Import {name} not allowed"))
+        )
+        parsed_state = {}
         try:
-            plan = dispatch_fn()
-        except TypeError:
-            plan = dispatch_fn(parsed_state)
-        return {"ok": True, "error": None, "plan": plan}
-    except Exception as exc:
-        return {"ok": False, "error": f"{type(exc).__name__}: {str(exc)}", "plan": None}
+            parsed_state = json.loads(state_str) if state_str else {}
+        except Exception:
+            pass
+
+        namespace = {
+            "__builtins__": builtins,
+            "json": json,
+            "math": math,
+            "data": parsed_state,
+            "state": parsed_state,
+            "emergency_telemetry": parsed_state,
+        }
+        try:
+            exec(code_str, namespace, namespace)
+            if "get_dispatch_plan" not in namespace:
+                result = {"ok": False, "error": "Missing get_dispatch_plan() function", "plan": None}
+                return
+            dispatch_fn = namespace["get_dispatch_plan"]
+            if not callable(dispatch_fn):
+                result = {"ok": False, "error": "get_dispatch_plan is not callable", "plan": None}
+                return
+            try:
+                plan = dispatch_fn()
+            except TypeError:
+                plan = dispatch_fn(parsed_state)
+            result = {"ok": True, "error": None, "plan": plan}
+        except Exception as exc:
+            result = {"ok": False, "error": f"{type(exc).__name__}: {str(exc)}", "plan": None}
+
+    t = threading.Thread(target=_sandboxed_runner)
+    t.daemon = True
+    t.start()
+    t.join(timeout=timeout_sec)
+
+    if t.is_alive():
+        return {"ok": False, "error": "ExecutionTimeout", "plan": None}
+
+    return result
