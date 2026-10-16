@@ -133,7 +133,9 @@ if __name__ == "__main__":
         rl_res = e_data.get("goldenhour_rl_grpo", {})
         append_benchmark_to_readme(base_res, rl_res)
         commit_and_push_readme()
-    elif "COMPLETE" in str(t_status):
+    elif "RUNNING" in str(e_status):
+        print("\n[Pipeline] Evaluation benchmark kernel is actively RUNNING on Kaggle GPU. Standing by for completion...")
+    elif "COMPLETE" in str(t_status) and not e_data:
         print("\n[Pipeline] Training kernel is COMPLETE! Triggering evaluation pass...")
         trigger_eval_kernel()
     else:
