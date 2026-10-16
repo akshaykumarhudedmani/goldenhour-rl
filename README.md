@@ -57,12 +57,12 @@ Standard LLMs hallucinate when asked to coordinate emergency medical logistics: 
 
 Evaluated across $N=100$ out-of-distribution crisis scenarios (`--dry_run` baseline analysis):
 
-| Strategy | Engine Type | Zero-Violation Rate | Patient Survival (SLA) | ICU Bed Overflows | Ventilator Overflows | Total Violations |
-| :--- | :--- | :---: | :---: | :---: | :---: | :---: |
-| **Greedy Nearest Hospital** | Programmatic Heuristic Baseline | 34.0% | 98.5% | 66 | 47 | 119 |
-| **Base Qwen-1.5B-Instruct** | Zero-Shot Pre-Trained LLM | 0.0% | 0.0% | 0 | 0 | 201 |
-| **GoldenHour-RL (Step 120)** | Post-Trained GRPO LoRA | **0.0%** | **1.5%** | **0** | **0** | **198** |
-| **Oracle Target Schedule** | Ground-Truth Solver (Upper Bound) | **100.0%** | **100.0%** | **0** | **0** | **0** |
+| Strategy | Engine Type | Executable Plan % | Zero-Violation Rate | Patient Survival (SLA) | ICU Bed Overflows | Ventilator Overflows | Total Violations |
+| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Greedy Nearest Hospital** | Programmatic Heuristic Baseline | 100.0% | 34.0% | 98.5% | 66 | 47 | 119 |
+| **Base Qwen-1.5B-Instruct** | Zero-Shot Pre-Trained LLM (Pass@1) | 10.0% | 0.0% | 1.5% | 2 | 0 | 208 |
+| **GoldenHour-RL (Step 120)** | Verifier-Guided GRPO LoRA (Pass@1) | **2.0%** | **0.0%** | **1.5%** | **2** | **1** | **204** |
+| **Oracle Target Schedule** | Ground-Truth Solver (Upper Bound) | 100.0% | **100.0%** | **100.0%** | **0** | **0** | **0** |
 
 > [!NOTE]
 > The table above establishes the operational extremes: naive unconstrained routing (causing 119 life-support violations) vs. mathematical upper-bound targets. Autoregressive LLM checkpoint evaluation is reported in Section 5.
