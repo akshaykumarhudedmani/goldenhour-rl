@@ -135,6 +135,8 @@ if __name__ == "__main__":
         commit_and_push_readme()
     elif "RUNNING" in str(e_status):
         print("\n[Pipeline] Evaluation benchmark kernel is actively RUNNING on Kaggle GPU. Standing by for completion...")
+    elif "ERROR" in str(e_status):
+        print("\n[Pipeline] Evaluation benchmark kernel encountered an ERROR. Please inspect logs.")
     elif "COMPLETE" in str(t_status) and not e_data:
         print("\n[Pipeline] Training kernel is COMPLETE! Triggering evaluation pass...")
         trigger_eval_kernel()
