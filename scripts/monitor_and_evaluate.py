@@ -46,10 +46,21 @@ def check_eval_benchmark():
     if status == "COMPLETE":
         try:
             api.kernels_output(EVAL_KERNEL_ID, path=str(out_dir))
-            summary_file = out_dir / "eval_summary.json"
-            if summary_file.exists():
-                with open(summary_file, "r", encoding="utf-8") as f:
-                    return status, json.load(f)
+            for p in out_dir.rglob("eval_summary.json"):
+                if p.is_file():
+                    with open(p, "r", encoding="utf-8") as f:
+                        return status, json.load(f)
+            
+            for log_file in out_dir.glob("*.log"):
+                with open(log_file, "r", encoding="utf-8", errors="ignore") as f:
+                    log_text = f.read()
+                base_m = re.search(r"Base Model Results:\s*(\{.*?\})", log_text, re.DOTALL)
+                rl_m = re.search(r"GoldenHour-RL \(GRPO\) Results:\s*(\{.*?\})", log_text, re.DOTALL)
+                if base_m and rl_m:
+                    return status, {
+                        "base_qwen_1_5b": json.loads(base_m.group(1)),
+                        "goldenhour_rl_grpo": json.loads(rl_m.group(1)),
+                    }
         except Exception as e:
             print(f"[Eval Download] Error: {e}")
             
@@ -137,8 +148,8 @@ if __name__ == "__main__":
         print("\n[Pipeline] Evaluation benchmark kernel is actively RUNNING on Kaggle GPU. Standing by for completion...")
     elif "ERROR" in str(e_status):
         print("\n[Pipeline] Evaluation benchmark kernel encountered an ERROR. Please inspect logs.")
-    elif "COMPLETE" in str(t_status) and not e_data:
-        print("\n[Pipeline] Training kernel is COMPLETE! Triggering evaluation pass...")
-        trigger_eval_kernel()
+    elif "COMPLETE" in str(e_status) and not e_data:
+        print("\n[Pipeline] Evaluation kernel completed but eval_summary.json not yet parsed.")
     else:
+        print("\n[Pipeline] Monitor standing by.")
         print("\n[Pipeline] Training kernel is actively progressing. Monitor is standing by.")
