@@ -11,6 +11,9 @@ EXCLUDED_NAMES = {
     ".pytest_cache",
     ".ipynb_checkpoints",
     "_kaggle_test",
+    "goldenhour_rl.egg-info",
+    "build",
+    "dist",
     "out",
     "out_live",
     "out_download",
@@ -41,7 +44,7 @@ def build_clean_archive(output_zip: str = "goldenhour-rl-clean.zip"):
             parts = rel_path.parts
 
             # Check if any parent or name matches excluded sets
-            if any(p in EXCLUDED_NAMES for p in parts):
+            if any(p in EXCLUDED_NAMES or p.endswith(".egg-info") for p in parts):
                 continue
             if file_path.suffix in EXCLUDED_EXTENSIONS:
                 continue
