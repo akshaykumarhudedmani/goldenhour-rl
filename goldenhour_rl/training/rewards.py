@@ -52,9 +52,12 @@ def format_reward_func(prompts: List[Any], completions: List[Any], **kwargs) -> 
         if code_match:
             code_text = code_match.group(1).strip()
             if "def get_dispatch_plan" in code_text:
-                score += 0.3
-                if CLOSED_CODE_PATTERN.search(text):
-                    score += 0.2
+                if re.search(r"return\s*\[\s*\]", code_text):
+                    score -= 0.5  # Penalize empty dispatch list hack
+                else:
+                    score += 0.3
+                    if CLOSED_CODE_PATTERN.search(text):
+                        score += 0.2
             else:
                 score -= 0.4
         else:
@@ -68,9 +71,10 @@ def format_reward_func(prompts: List[Any], completions: List[Any], **kwargs) -> 
 def verifier_reward_func(prompts: List[Any], completions: List[Any], state_json: List[str] = None, **kwargs) -> List[float]:
     """
     Evaluates physical invariant compliance with dense, monotonic reward shaping:
-    - -1.5 for code crashes, syntax errors, or unhandled exceptions (crashing is strictly worse than attempting).
-    - +0.5 baseline for successfully executing and returning a list.
-    - Proportional credit for patients arriving within SLA windows without capacity overflows.
+    - -1.5 for code crashes, syntax errors, or unhandled exceptions.
+    - -1.0 penalty for empty dispatch plans (return []).
+    - Dense progressive credit for each patient successfully arriving on time without capacity overflow.
+    - -0.25 penalty per unassigned patient; -0.4 penalty per ICU/ventilator capacity overflow.
     - +2.0 jackpot bonus for 100% zero-violation dispatch plans.
     """
     if state_json is None:
@@ -102,8 +106,9 @@ def verifier_reward_func(prompts: List[Any], completions: List[Any], state_json:
             continue
 
         plan = exec_res.get("plan")
-        if not isinstance(plan, list):
-            rewards.append(-1.2)
+        if not isinstance(plan, list) or len(plan) == 0:
+            # Penalize empty dispatch plan (leaving all patients on the street)
+            rewards.append(-1.0)
             continue
 
         ver_res = verify_dispatch_plan(plan, s_json)
@@ -112,19 +117,18 @@ def verifier_reward_func(prompts: List[Any], completions: List[Any], state_json:
             # Perfect schedule: +2.0 jackpot + SLA arrival margin bonus
             rewards.append(round(2.0 + 0.5 * ver_res["sla_score"], 4))
         else:
-            # Dense progressive shaping: reward successful patient routings, penalize bottlenecks
+            # Dense progressive shaping: reward successful patient routings, penalize unassigned/overflows
             stats = ver_res.get("stats", {})
             total_p = max(1, stats.get("total_patients", 1))
-            breaches = stats.get("breached_count", total_p)
+            survived_p = stats.get("survived_count", 0)
+            unassigned = stats.get("unassigned_count", 0)
             icu_ov = stats.get("icu_overflow_count", 0)
             vent_ov = stats.get("vent_overflow_count", 0)
 
-            survived_p = max(0, total_p - breaches)
             patient_ratio = survived_p / total_p  # 0.0 to 1.0
 
-            # Start from +0.4 for compiling, add survival credit, subtract capacity overflow penalty
-            score = 0.4 + (0.8 * patient_ratio) - (0.35 * icu_ov) - (0.35 * vent_ov)
-            # Bound shaped reward between -1.0 and +1.0 for invalid schedules
+            # Strictly monotonic gradient: -0.2 base invalid, credit for survived, penalties for bottlenecks
+            score = -0.2 + (1.2 * patient_ratio) - (0.25 * unassigned) - (0.4 * icu_ov) - (0.4 * vent_ov)
             clamped_score = max(-1.0, min(1.0, score))
             rewards.append(round(clamped_score, 4))
 

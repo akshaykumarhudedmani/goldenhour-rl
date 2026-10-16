@@ -115,6 +115,7 @@ def verify_dispatch_plan(plan: Any, state_json: str) -> Dict[str, Any]:
     is_valid = len(violations) == 0
     total_count = len(patients)
     avg_margin = (sum(sla_margins) / total_count) if (is_valid and total_count > 0) else 0.0
+    survived_count = max(0, len(sla_margins) - icu_overflow_count - vent_overflow_count)
 
     return {
         "valid": is_valid,
@@ -122,9 +123,11 @@ def verify_dispatch_plan(plan: Any, state_json: str) -> Dict[str, Any]:
         "sla_score": round(avg_margin, 4),
         "stats": {
             "assigned_count": len(assigned_patients),
+            "unassigned_count": len(missing_patients),
             "total_patients": total_count,
             "breached_count": breached_count,
             "icu_overflow_count": icu_overflow_count,
             "vent_overflow_count": vent_overflow_count,
+            "survived_count": survived_count,
         }
     }

@@ -64,8 +64,12 @@ Evaluated across $N=100$ out-of-distribution crisis scenarios (`--dry_run` basel
 | **GoldenHour-RL (Step 120)** | Verifier-Guided GRPO LoRA (Pass@1) | **14.0%** | **0.0%** | **0.5%** | **0** | **0** | **201** |
 | **Oracle Target Schedule** | Ground-Truth Solver (Upper Bound) | 100.0% | **100.0%** | **100.0%** | **0** | **0** | **0** |
 
-> [!NOTE]
-> The table above establishes the operational extremes: naive unconstrained routing (causing 119 life-support violations) vs. mathematical upper-bound targets. Autoregressive LLM checkpoint evaluation is reported in Section 5.
+> [!IMPORTANT]
+> **Post-Mortem Systems Analysis on v0.1 Model Weights (Step 120):**
+> In the initial v0.1 training run (`lja961ve`), the reward function awarded format bonuses (+0.5) even when the function returned an empty list (`return []`). Because assigning zero patients trivially incurs 0 ICU/ventilator overflows while avoiding syntax crashes, the Step 120 policy learned to emit `return []`, explaining why capacity overflows were 0 while patient survival was 0.5% (all ~200 patients left unassigned).
+> 
+> In v0.2, this loophole is completely eliminated: `return []` receives a -1.0 verifier penalty and -0.5 format penalty, and the verifier explicitly tracks `survived_count` so rewards scale monotonically with patient arrivals (`+1.2 * patient_ratio`).
+
 
 ---
 

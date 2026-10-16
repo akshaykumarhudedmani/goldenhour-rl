@@ -108,6 +108,11 @@ def extract_python_code(text: str) -> str | None:
     if raw_match:
         return raw_match.group(1).split("```")[0].strip()
 
+    # Fallback 4: Raw list literal inside markdown or text containing patient_id
+    raw_list = re.search(r"(\[\s*\{\s*['\"]patient_id['\"].*?\])", text, flags=re.DOTALL)
+    if raw_list:
+        return f"def get_dispatch_plan():\n    return {raw_list.group(1).strip()}"
+
     return None
 
 

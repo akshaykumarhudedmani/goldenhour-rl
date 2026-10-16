@@ -110,6 +110,11 @@ def execute_dispatch_code(code_str: str, timeout_sec: float = 2.0, state_str: st
     if not code_str or not code_str.strip():
         return {"ok": False, "error": "EmptyCodeBlock", "plan": None}
 
+    # Auto-wrap raw list literals [ { ... } ] into def get_dispatch_plan()
+    code_str_clean = code_str.strip()
+    if code_str_clean.startswith("[") and code_str_clean.endswith("]"):
+        code_str = f"def get_dispatch_plan():\n    return {code_str_clean}\n"
+
     # Step 1: Fast static AST security check
     ast_error = validate_ast(code_str)
     if ast_error:
@@ -145,6 +150,11 @@ def execute_dispatch_code(code_str: str, timeout_sec: float = 2.0, state_str: st
         try:
             exec(code_str, namespace, namespace)
             if "get_dispatch_plan" not in namespace:
+                # Fallback: check if script defined dispatch_plan, plan, or schedule as a list
+                for candidate in ("dispatch_plan", "plan", "schedule", "result"):
+                    if isinstance(namespace.get(candidate), list):
+                        result = {"ok": True, "error": None, "plan": namespace[candidate]}
+                        return
                 result = {"ok": False, "error": "Missing get_dispatch_plan() function", "plan": None}
                 return
             dispatch_fn = namespace["get_dispatch_plan"]
