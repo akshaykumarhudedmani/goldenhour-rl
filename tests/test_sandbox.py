@@ -59,6 +59,26 @@ def test_double_booked_ambulance_caught():
     assert any("DoubleBooking" in v for v in res["violations"])
 
 
+def test_nested_dict_ids_handled_safely():
+    """Verify that nested dicts and unhashable structures in plan IDs are sanitized without TypeError."""
+    sample = generate_scenario(seed=103)
+    state = json.loads(sample["state_json"])
+    # Emit ambulance_id and hospital_id as nested dicts, and patient_id as dict
+    bad_plan = [
+        {
+            "patient_id": {"patient_id": p["patient_id"]},
+            "ambulance_id": {"ambulance_id": state["ambulances"][0]["ambulance_id"]},
+            "hospital_id": {"id": list(state["hospitals"].keys())[0]},
+        }
+        for p in state["patients"]
+    ]
+    # This must not crash with TypeError: unhashable type: 'dict'
+    res = verify_dispatch_plan(bad_plan, sample["state_json"])
+    assert isinstance(res, dict)
+    assert "violations" in res
+
+
+
 def test_reward_pipeline_end_to_end():
     sample = generate_scenario(seed=202)
     valid_plan_json = sample["reference_solution"]
@@ -202,5 +222,65 @@ def test_raw_list_and_variable_fallback():
     res_var = execute_dispatch_code(var_code, timeout_sec=2.0, state_str=sample["state_json"])
     assert res_var["ok"] is True
     assert len(res_var["plan"]) == len(ref_plan)
+
+
+def test_oop_class_and_json_literals_execution():
+    """Verify that models defining OOP helper classes and using true/false/null execute cleanly."""
+    oop_code = (
+        "class Patient:\n"
+        "    def __init__(self, patient_id, severity, requires_vent):\n"
+        "        self.patient_id = patient_id\n"
+        "        self.severity = severity\n"
+        "        self.requires_vent = requires_vent\n"
+        "\n"
+        "def get_dispatch_plan():\n"
+        "    # Test JSON booleans and idempotent json.loads\n"
+        "    t = true\n"
+        "    f = false\n"
+        "    n = null\n"
+        "    # Test loading pre-parsed telemetry_data\n"
+        "    parsed = json.loads(telemetry_data)\n"
+        "    p = Patient('PAT_1', 1, t)\n"
+        "    return []\n"
+    )
+    sample = generate_scenario(seed=1212)
+    res = execute_dispatch_code(oop_code, timeout_sec=2.0, state_str=sample["state_json"])
+    assert res["ok"] is True
+    assert res["plan"] == []
+
+
+def test_specification_gaming_positive_reward_trap_eliminated():
+    """Verify that empty plans or crashing code cannot earn positive format reward or net positive reward."""
+    sample = generate_scenario(seed=1313)
+
+    # Empty plan with filler reasoning trace
+    empty_comp = (
+        "<think>Triage analysis: evaluating capacity constraints and patient priority carefully.</think>\n"
+        "```python\n"
+        "def get_dispatch_plan():\n"
+        "    return []\n"
+        "```"
+    )
+    fmt_empty = format_reward_func([sample["prompt"]], [empty_comp], state_json=[sample["state_json"]])[0]
+    ver_empty = verifier_reward_func([sample["prompt"]], [empty_comp], state_json=[sample["state_json"]])[0]
+    assert fmt_empty <= 0.0, f"Format reward for empty plan must be non-positive, got {fmt_empty}"
+    assert ver_empty == -1.0
+    assert (fmt_empty + ver_empty) <= -1.0
+
+    # Crashing code with filler reasoning trace
+    crash_comp = (
+        "<think>Triage analysis: evaluating capacity constraints and patient priority carefully.</think>\n"
+        "```python\n"
+        "def get_dispatch_plan():\n"
+        "    raise RuntimeError('crash')\n"
+        "```"
+    )
+    fmt_crash = format_reward_func([sample["prompt"]], [crash_comp], state_json=[sample["state_json"]])[0]
+    ver_crash = verifier_reward_func([sample["prompt"]], [crash_comp], state_json=[sample["state_json"]])[0]
+    assert fmt_crash <= 0.0, f"Format reward for crashing code must be non-positive, got {fmt_crash}"
+    assert ver_crash == -1.5
+    assert (fmt_crash + ver_crash) <= -1.5
+
+
 
 

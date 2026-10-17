@@ -44,6 +44,19 @@ SAFE_BUILTINS = {
     "print": lambda *args, **kwargs: None,
     "TimeoutError": TimeoutError,
     "Exception": Exception,
+    "__build_class__": __build_class__,
+    "object": object,
+    "type": type,
+    "super": super,
+    "property": property,
+    "staticmethod": staticmethod,
+    "classmethod": classmethod,
+    "True": True,
+    "False": False,
+    "None": None,
+    "true": True,
+    "false": False,
+    "null": None,
 }
 
 BANNED_NAMES = {
@@ -57,6 +70,43 @@ BANNED_NAMES = {
     "getattr",
     "setattr",
     "delattr",
+}
+
+BANNED_ATTRS = {
+    "__class__",
+    "__subclasses__",
+    "__globals__",
+    "__code__",
+    "__bases__",
+    "__mro__",
+    "__dict__",
+    "__closure__",
+    "__func__",
+    "__self__",
+    "__module__",
+}
+
+ALLOWED_DUNDERS = {
+    "__init__",
+    "__str__",
+    "__repr__",
+    "__len__",
+    "__getitem__",
+    "__setitem__",
+    "__iter__",
+    "__next__",
+    "__eq__",
+    "__ne__",
+    "__lt__",
+    "__le__",
+    "__gt__",
+    "__ge__",
+    "__contains__",
+    "__enter__",
+    "__exit__",
+    "__bool__",
+    "__call__",
+    "__hash__",
 }
 
 
@@ -97,8 +147,11 @@ def validate_ast(code_str: str) -> Optional[str]:
                     return f"SecurityViolation: Import from '{node.module}' is forbidden."
         if isinstance(node, ast.Name) and node.id in BANNED_NAMES:
             return f"SecurityViolation: Use of banned function '{node.id}' is forbidden."
-        if isinstance(node, ast.Attribute) and (node.attr.startswith("__") or node.attr in BANNED_NAMES):
-            return f"SecurityViolation: Access to internal attribute '{node.attr}' is forbidden."
+        if isinstance(node, ast.Attribute):
+            if node.attr in BANNED_NAMES or node.attr in BANNED_ATTRS:
+                return f"SecurityViolation: Access to internal attribute '{node.attr}' is forbidden."
+            if node.attr.startswith("__") and node.attr.endswith("__") and node.attr not in ALLOWED_DUNDERS:
+                return f"SecurityViolation: Access to internal attribute '{node.attr}' is forbidden."
 
 class LoopBoundingTransformer(ast.NodeTransformer):
     """Injects an iteration counter into all While and For loops to terminate infinite loops in <1ms."""
@@ -175,6 +228,22 @@ class LoopBoundingTransformer(ast.NodeTransformer):
         return [init_counter, node]
 
 
+class SafeJsonModule:
+    """Safe wrapper around json to make loads() idempotent when passed pre-parsed dicts."""
+    def __init__(self, real_json):
+        self._real_json = real_json
+
+    def loads(self, s, *args, **kwargs):
+        if isinstance(s, (dict, list)):
+            return s
+        if isinstance(s, (str, bytes, bytearray)):
+            return self._real_json.loads(s, *args, **kwargs)
+        return s
+
+    def __getattr__(self, name):
+        return getattr(self._real_json, name)
+
+
 def execute_dispatch_code(code_str: str, timeout_sec: float = 2.0, state_str: str = "{}") -> Dict[str, Any]:
     """
     Executes generated Python code inside an AST-validated, thread-isolated sandboxed namespace.
@@ -210,10 +279,13 @@ def execute_dispatch_code(code_str: str, timeout_sec: float = 2.0, state_str: st
     def _sandboxed_runner():
         nonlocal result
         builtins = dict(SAFE_BUILTINS)
+        safe_json = SafeJsonModule(json)
         builtins["open"] = create_safe_open(state_str)
         builtins["input"] = create_safe_input(state_str)
         builtins["__import__"] = lambda name, *args, **kwargs: (
-            __import__(name, *args, **kwargs) if name in SAFE_MODULES else (_ for _ in ()).throw(ImportError(f"Import {name} not allowed"))
+            safe_json if name == "json" else (
+                __import__(name, *args, **kwargs) if name in SAFE_MODULES else (_ for _ in ()).throw(ImportError(f"Import {name} not allowed"))
+            )
         )
         parsed_state = {}
         try:
@@ -222,14 +294,24 @@ def execute_dispatch_code(code_str: str, timeout_sec: float = 2.0, state_str: st
             pass
 
         namespace = {
+            "__name__": "__dispatch__",
             "__builtins__": builtins,
-            "json": json,
+            "json": safe_json,
             "math": math,
+            "True": True,
+            "False": False,
+            "None": None,
+            "true": True,
+            "false": False,
+            "null": None,
             "data": parsed_state,
             "state": parsed_state,
             "scenario": parsed_state,
             "telemetry": parsed_state,
             "emergency_telemetry": parsed_state,
+            "telemetry_data": parsed_state,
+            "crisis_state": parsed_state,
+            "emergency_state": parsed_state,
         }
         try:
             exec(executable_target, namespace, namespace)

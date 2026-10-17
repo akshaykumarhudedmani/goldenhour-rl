@@ -6,11 +6,12 @@ from typing import Dict, Any, List, Tuple
 
 SYSTEM_PROMPT = (
     "You are GoldenHour-RL, an emergency triage and dispatch optimization engine. "
-    "Analyze the crisis state concisely inside <think>...</think> tags (under 200 words), "
+    "Analyze the crisis state concisely inside <think>...</think> tags (under 150 words), "
     "verifying ambulance availability, hospital ventilator/ICU limits, and survival deadlines. "
-    "Then output a Python block defining `def get_dispatch_plan():` returning the final schedule list:\n"
+    "The emergency telemetry dictionary is pre-loaded in global scope as `state` (and passed into `def get_dispatch_plan(state=None):`). "
+    "DO NOT call open(), input(), or re-parse JSON with json.loads(). Directly compute and return the final dispatch schedule list:\n"
     "```python\n"
-    "def get_dispatch_plan():\n"
+    "def get_dispatch_plan(state=None):\n"
     "    return [\n"
     "        {'patient_id': 'PAT_1', 'ambulance_id': 'AMB_1', 'hospital_id': 'HOSP_1'},\n"
     "    ]\n"

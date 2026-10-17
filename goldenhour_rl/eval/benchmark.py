@@ -45,6 +45,7 @@ def evaluate_dataset_on_strategy(dataset_path: str, strategy_name: str) -> Dict[
     total_sla_margins = 0.0
     total_patients = 0
     total_breaches = 0
+    total_unassigned = 0
     total_icu_overflows = 0
     total_vent_overflows = 0
 
@@ -69,12 +70,13 @@ def evaluate_dataset_on_strategy(dataset_path: str, strategy_name: str) -> Dict[
         stats = ver_res.get("stats", {})
         total_patients += stats.get("total_patients", 0)
         total_breaches += stats.get("breached_count", 0)
+        total_unassigned += stats.get("unassigned_count", 0)
         total_icu_overflows += stats.get("icu_overflow_count", 0)
         total_vent_overflows += stats.get("vent_overflow_count", 0)
 
     pass_rate = (zero_violation_count / total_scenarios) * 100 if total_scenarios > 0 else 0.0
     avg_margin = (total_sla_margins / zero_violation_count) if zero_violation_count > 0 else 0.0
-    patient_survival_rate = ((total_patients - total_breaches) / total_patients * 100) if total_patients > 0 else 0.0
+    patient_survival_rate = max(0.0, ((total_patients - total_breaches - total_unassigned) / total_patients * 100)) if total_patients > 0 else 0.0
 
     return {
         "strategy": strategy_name,
@@ -85,6 +87,7 @@ def evaluate_dataset_on_strategy(dataset_path: str, strategy_name: str) -> Dict[
         "icu_overflows": total_icu_overflows,
         "vent_overflows": total_vent_overflows,
         "sla_breaches": total_breaches,
+        "unassigned_patients": total_unassigned,
         "avg_sla_margin": round(avg_margin, 4),
     }
 
@@ -133,6 +136,9 @@ def evaluate_model_on_dataset(
     lora_path: str,
     base_model_name: str = "Qwen/Qwen2.5-Coder-1.5B-Instruct",
     max_samples: int = 50,
+    num_tries: int = 1,
+    temperature: float = 0.2,
+    top_k: int = 50,
 ) -> Dict[str, Any]:
     """Evaluates an actual trained LoRA adapter on the crisis dataset."""
     import torch
@@ -169,10 +175,12 @@ def evaluate_model_on_dataset(
     total_sla_margins = 0.0
     total_patients = 0
     total_breaches = 0
+    total_unassigned = 0
     total_icu_overflows = 0
     total_vent_overflows = 0
 
-    print(f"[GoldenHour-RL Benchmark] Running inference across {len(samples)} scenarios on {device}...")
+    mode_label = f"Pass@{num_tries} (T={temperature})" if num_tries == 1 else f"Best-of-{num_tries} (T={temperature})"
+    print(f"[GoldenHour-RL Benchmark] Running inference [{mode_label}] across {len(samples)} scenarios on {device}...")
     for i, sample in enumerate(samples):
         prompt = sample["prompt"]
         messages = [{"role": "user", "content": prompt}]
@@ -180,47 +188,75 @@ def evaluate_model_on_dataset(
             messages, tokenize=False, add_generation_prompt=True
         )
         inputs = tokenizer(formatted_prompt, return_tensors="pt").to(device)
+
+        gen_kwargs = {
+            "max_new_tokens": 1536,
+            "do_sample": (temperature > 0.0),
+            "pad_token_id": tokenizer.eos_token_id,
+        }
+        if temperature > 0.0:
+            gen_kwargs["temperature"] = temperature
+            gen_kwargs["top_p"] = 0.95
+            if top_k is not None:
+                gen_kwargs["top_k"] = top_k
+        if num_tries > 1:
+            gen_kwargs["num_return_sequences"] = num_tries
+
         with torch.no_grad():
-            outputs = model.generate(
-                **inputs,
-                max_new_tokens=1024,
-                temperature=0.6,
-                top_p=0.95,
-                do_sample=True,
-                pad_token_id=tokenizer.eos_token_id,
-            )
-        generated_text = tokenizer.decode(outputs[0][inputs.input_ids.shape[1]:], skip_special_tokens=True)
-        code_str = extract_python_code(generated_text)
-        if code_str:
+            outputs = model.generate(**inputs, **gen_kwargs)
+
+        prompt_len = inputs.input_ids.shape[1]
+        best_ver = None
+        sample_compiled = False
+
+        for seq in outputs:
+            generated_text = tokenizer.decode(seq[prompt_len:], skip_special_tokens=True)
+            code_str = extract_python_code(generated_text)
+            if not code_str:
+                continue
+
             exec_res = execute_dispatch_code(code_str, timeout_sec=2.0, state_str=sample["state_json"])
-            if exec_res.get("ok"):
-                executable_count += 1
-                plan = exec_res.get("plan", [])
-            else:
-                plan = []
+            if not exec_res.get("ok") or not isinstance(exec_res.get("plan"), list):
+                continue
+
+            sample_compiled = True
+            plan = exec_res.get("plan", [])
+            ver = verify_dispatch_plan(plan, sample["state_json"])
+
+            if best_ver is None or len(ver["violations"]) < len(best_ver["violations"]):
+                best_ver = ver
+            if ver["valid"]:
+                break
+
+        if sample_compiled:
+            executable_count += 1
+
+        state = json.loads(sample["state_json"])
+        n_p = len(state.get("patients", []))
+        total_patients += n_p
+
+        if best_ver is not None:
+            if best_ver["valid"]:
+                zero_violation_count += 1
+                total_sla_margins += best_ver["sla_score"]
+            total_violations += len(best_ver["violations"])
+            stats = best_ver.get("stats", {})
+            total_breaches += stats.get("breached_count", 0)
+            total_unassigned += stats.get("unassigned_count", 0)
+            total_icu_overflows += stats.get("icu_overflow_count", 0)
+            total_vent_overflows += stats.get("vent_overflow_count", 0)
         else:
-            plan = []
-
-        ver_res = verify_dispatch_plan(plan, sample["state_json"])
-        if ver_res["valid"]:
-            zero_violation_count += 1
-            total_sla_margins += ver_res["sla_score"]
-
-        total_violations += len(ver_res["violations"])
-        stats = ver_res.get("stats", {})
-        total_patients += stats.get("total_patients", 0)
-        total_breaches += stats.get("breached_count", 0)
-        total_icu_overflows += stats.get("icu_overflow_count", 0)
-        total_vent_overflows += stats.get("vent_overflow_count", 0)
+            total_unassigned += n_p
+            total_violations += n_p
 
     total_scenarios = len(samples)
     executable_rate = (executable_count / total_scenarios) * 100 if total_scenarios > 0 else 0.0
     pass_rate = (zero_violation_count / total_scenarios) * 100 if total_scenarios > 0 else 0.0
     avg_margin = (total_sla_margins / zero_violation_count) if zero_violation_count > 0 else 0.0
-    patient_survival_rate = ((total_patients - total_breaches) / total_patients * 100) if total_patients > 0 else 0.0
+    patient_survival_rate = max(0.0, ((total_patients - total_breaches - total_unassigned) / total_patients * 100)) if total_patients > 0 else 0.0
 
     return {
-        "strategy": f"GoldenHour-RL ({Path(lora_path).name})",
+        "strategy": f"GoldenHour-RL ({Path(lora_path).name}) [{mode_label}]",
         "scenarios": total_scenarios,
         "executable_plan_rate": round(executable_rate, 2),
         "zero_violation_rate": round(pass_rate, 2),
@@ -229,6 +265,7 @@ def evaluate_model_on_dataset(
         "icu_overflows": total_icu_overflows,
         "vent_overflows": total_vent_overflows,
         "sla_breaches": total_breaches,
+        "unassigned_patients": total_unassigned,
         "avg_sla_margin": round(avg_margin, 4),
     }
 

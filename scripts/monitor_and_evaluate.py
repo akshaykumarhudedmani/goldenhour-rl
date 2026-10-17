@@ -68,7 +68,7 @@ def check_eval_benchmark():
     return status, None
 
 
-def append_benchmark_to_readme(base_metrics, rl_metrics):
+def append_benchmark_to_readme(e_data):
     """Appends or updates the empirical LLM benchmark table in Section 2 of README.md."""
     root_dir = Path(__file__).resolve().parent.parent
     readme_path = root_dir / "README.md"
@@ -76,14 +76,32 @@ def append_benchmark_to_readme(base_metrics, rl_metrics):
     with open(readme_path, "r", encoding="utf-8") as f:
         content = f.read()
 
-    new_table = (
-        "| Strategy | Engine Type | Executable Plan % | Zero-Violation Rate | Patient Survival (SLA) | ICU Bed Overflows | Ventilator Overflows | Total Violations |\n"
-        "| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |\n"
-        "| **Greedy Nearest Hospital** | Programmatic Heuristic Baseline | 100.0% | 34.0% | 98.5% | 66 | 47 | 119 |\n"
-        f"| **Base Qwen-1.5B-Instruct** | Zero-Shot Pre-Trained LLM (Pass@1) | {base_metrics.get('Executable Plan %', '0.0%')} | {base_metrics.get('Zero-Viol %', '0.0%')} | {base_metrics.get('Survival %', '0.0%')} | {base_metrics.get('ICU Overflows', 0)} | {base_metrics.get('Vent Overflows', 0)} | {base_metrics.get('Total Violations', 'N/A')} |\n"
-        f"| **GoldenHour-RL (GRPO)** | Verifier-Guided LoRA (Pass@1) | **{rl_metrics.get('Executable Plan %', 'N/A')}** | **{rl_metrics.get('Zero-Viol %', 'N/A')}** | **{rl_metrics.get('Survival %', 'N/A')}** | **{rl_metrics.get('ICU Overflows', 'N/A')}** | **{rl_metrics.get('Vent Overflows', 'N/A')}** | **{rl_metrics.get('Total Violations', 'N/A')}** |\n"
+    base_p1 = e_data.get("base_qwen_1_5b_pass1") or e_data.get("base_qwen_1_5b", {})
+    base_b4 = e_data.get("base_qwen_1_5b_bestof4", {})
+    rl_p1 = e_data.get("goldenhour_rl_grpo_pass1", {})
+    rl_b4 = e_data.get("goldenhour_rl_grpo_bestof4") or e_data.get("goldenhour_rl_grpo", {})
+
+    rows = [
+        "| Strategy | Engine Type | Executable Plan % | Zero-Violation Rate | Patient Survival (SLA) | ICU Bed Overflows | Ventilator Overflows | Total Violations |",
+        "| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |",
+        "| **Greedy Nearest Hospital** | Programmatic Heuristic Baseline | 100.0% | 34.0% | 98.5% | 66 | 47 | 119 |",
+        f"| **Base Qwen-1.5B-Instruct** | Zero-Shot Pre-Trained LLM (Pass@1) | {base_p1.get('Executable Plan %', 'N/A')} | {base_p1.get('Zero-Viol %', '0.0%')} | {base_p1.get('Survival %', 'N/A')} | {base_p1.get('ICU Overflows', 0)} | {base_p1.get('Vent Overflows', 0)} | {base_p1.get('Total Violations', 'N/A')} |",
+    ]
+    if base_b4:
+        rows.append(
+            f"| **Base Qwen-1.5B-Instruct** | Zero-Shot Pre-Trained LLM (Best-of-4) | {base_b4.get('Executable Plan %', 'N/A')} | {base_b4.get('Zero-Viol %', '0.0%')} | {base_b4.get('Survival %', 'N/A')} | {base_b4.get('ICU Overflows', 0)} | {base_b4.get('Vent Overflows', 0)} | {base_b4.get('Total Violations', 'N/A')} |"
+        )
+    if rl_p1:
+        rows.append(
+            f"| **GoldenHour-RL (GRPO)** | Verifier-Guided LoRA (Pass@1) | **{rl_p1.get('Executable Plan %', 'N/A')}** | **{rl_p1.get('Zero-Viol %', 'N/A')}** | **{rl_p1.get('Survival %', 'N/A')}** | **{rl_p1.get('ICU Overflows', 'N/A')}** | **{rl_p1.get('Vent Overflows', 'N/A')}** | **{rl_p1.get('Total Violations', 'N/A')}** |"
+        )
+    rows.append(
+        f"| **GoldenHour-RL (GRPO)** | Verifier-Guided LoRA (Best-of-4) | **{rl_b4.get('Executable Plan %', 'N/A')}** | **{rl_b4.get('Zero-Viol %', 'N/A')}** | **{rl_b4.get('Survival %', 'N/A')}** | **{rl_b4.get('ICU Overflows', 'N/A')}** | **{rl_b4.get('Vent Overflows', 'N/A')}** | **{rl_b4.get('Total Violations', 'N/A')}** |"
+    )
+    rows.append(
         "| **Oracle Target Schedule** | Ground-Truth Solver (Upper Bound) | 100.0% | **100.0%** | **100.0%** | **0** | **0** | **0** |"
     )
+    new_table = "\n".join(rows)
 
     table_pattern = r"\| Strategy \| Engine Type \|.*?\n\| \*\*Oracle Target Schedule\*\* \| Ground-Truth Solver \(Upper Bound\) \|.*?\n"
     if re.search(table_pattern, content, flags=re.DOTALL):
@@ -133,9 +151,7 @@ def run_pipeline_check():
 
     if e_data:
         print("\n[Eval Results Loaded]:", json.dumps(e_data, indent=2))
-        base_res = e_data.get("base_qwen_1_5b", {})
-        rl_res = e_data.get("goldenhour_rl_grpo", {})
-        append_benchmark_to_readme(base_res, rl_res)
+        append_benchmark_to_readme(e_data)
         commit_and_push_readme()
         return True
     elif "RUNNING" in str(e_status):

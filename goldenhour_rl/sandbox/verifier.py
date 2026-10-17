@@ -1,5 +1,29 @@
 import json
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional, Tuple
+
+
+def _sanitize_entity_id(val: Any, preferred_keys: Tuple[str, ...]) -> Optional[str]:
+    """Recursively unwraps nested dicts or coerces scalar representations into clean string IDs."""
+    depth = 0
+    while isinstance(val, dict) and depth < 5:
+        depth += 1
+        extracted = None
+        for k in preferred_keys:
+            if k in val:
+                extracted = val[k]
+                break
+        if extracted is None:
+            # Fallback to the first scalar value in dict
+            for v in val.values():
+                if isinstance(v, (str, int)):
+                    extracted = v
+                    break
+        val = extracted
+    if val is None or isinstance(val, (dict, list, set, tuple)):
+        return None
+    val_str = str(val).strip()
+    return val_str if val_str else None
+
 
 def verify_dispatch_plan(plan: Any, state_json: str) -> Dict[str, Any]:
     """
@@ -54,21 +78,18 @@ def verify_dispatch_plan(plan: Any, state_json: str) -> Dict[str, Any]:
         a_id = item.get("ambulance_id")
         h_id = item.get("hospital_id")
 
-        # Unwrap nested dict representations if emitted by LLM
-        if isinstance(p_id, dict):
-            p_id = p_id.get("patient_id") or p_id.get("id")
-        if isinstance(a_id, dict):
-            a_id = a_id.get("ambulance_id") or a_id.get("id")
-        if isinstance(h_id, dict):
-            h_id = h_id.get("hospital_id") or h_id.get("id")
+        # Unwrap and sanitize ID representations (dicts, scalars) into clean strings
+        p_id = _sanitize_entity_id(p_id, ("patient_id", "id"))
+        a_id = _sanitize_entity_id(a_id, ("ambulance_id", "id"))
+        h_id = _sanitize_entity_id(h_id, ("hospital_id", "id"))
 
-        if not isinstance(p_id, str) or p_id not in patients:
+        if not p_id or p_id not in patients:
             violations.append(f"Hallucination: Unknown patient ID '{p_id}'.")
             continue
-        if not isinstance(a_id, str) or a_id not in ambulances:
+        if not a_id or a_id not in ambulances:
             violations.append(f"Hallucination: Unknown ambulance ID '{a_id}'.")
             continue
-        if not isinstance(h_id, str) or h_id not in hospitals:
+        if not h_id or h_id not in hospitals:
             violations.append(f"Hallucination: Unknown hospital ID '{h_id}'.")
             continue
 
