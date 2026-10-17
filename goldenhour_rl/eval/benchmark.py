@@ -103,10 +103,22 @@ def extract_python_code(text: str) -> str | None:
     if unclosed and "def get_dispatch_plan" in unclosed.group(1):
         return unclosed.group(1).strip()
 
-    # Fallback 3: Raw text starting from optional imports and def get_dispatch_plan
-    raw_match = re.search(r"((?:import\s+[^\n]+\n+)*def get_dispatch_plan\s*\(.*)", text, flags=re.DOTALL)
-    if raw_match:
-        return raw_match.group(1).split("```")[0].strip()
+    # Fallback 3: Raw text starting from optional imports and def get_dispatch_plan (O(N) safe extraction)
+    idx = text.find("def get_dispatch_plan")
+    if idx != -1:
+        lines = text[:idx].splitlines()
+        import_lines = []
+        for line in reversed(lines):
+            stripped = line.strip()
+            if stripped.startswith("import ") or stripped.startswith("from "):
+                import_lines.append(line)
+            elif not stripped:
+                continue
+            else:
+                break
+        prefix = "\n".join(reversed(import_lines))
+        func_part = text[idx:].split("```")[0].strip()
+        return f"{prefix}\n{func_part}".strip() if prefix else func_part
 
     # Fallback 4: Raw list literal inside markdown or text containing patient_id
     raw_list = re.search(r"(\[\s*\{\s*['\"]patient_id['\"].*?\])", text, flags=re.DOTALL)
