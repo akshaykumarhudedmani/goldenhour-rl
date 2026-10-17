@@ -5,6 +5,8 @@ import re
 from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv()
+if "KAGGLE_API_TOKEN" in os.environ and "KAGGLE_KEY" not in os.environ:
+    os.environ["KAGGLE_KEY"] = os.environ["KAGGLE_API_TOKEN"]
 
 from kaggle.api.kaggle_api_extended import KaggleApi
 from huggingface_hub import HfApi
