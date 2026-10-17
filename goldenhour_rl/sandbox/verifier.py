@@ -54,13 +54,21 @@ def verify_dispatch_plan(plan: Any, state_json: str) -> Dict[str, Any]:
         a_id = item.get("ambulance_id")
         h_id = item.get("hospital_id")
 
-        if not p_id or p_id not in patients:
+        # Unwrap nested dict representations if emitted by LLM
+        if isinstance(p_id, dict):
+            p_id = p_id.get("patient_id") or p_id.get("id")
+        if isinstance(a_id, dict):
+            a_id = a_id.get("ambulance_id") or a_id.get("id")
+        if isinstance(h_id, dict):
+            h_id = h_id.get("hospital_id") or h_id.get("id")
+
+        if not isinstance(p_id, str) or p_id not in patients:
             violations.append(f"Hallucination: Unknown patient ID '{p_id}'.")
             continue
-        if not a_id or a_id not in ambulances:
+        if not isinstance(a_id, str) or a_id not in ambulances:
             violations.append(f"Hallucination: Unknown ambulance ID '{a_id}'.")
             continue
-        if not h_id or h_id not in hospitals:
+        if not isinstance(h_id, str) or h_id not in hospitals:
             violations.append(f"Hallucination: Unknown hospital ID '{h_id}'.")
             continue
 
