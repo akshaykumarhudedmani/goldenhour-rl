@@ -81,7 +81,7 @@ def append_benchmark_to_readme(base_metrics, rl_metrics):
         "| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |\n"
         "| **Greedy Nearest Hospital** | Programmatic Heuristic Baseline | 100.0% | 34.0% | 98.5% | 66 | 47 | 119 |\n"
         f"| **Base Qwen-1.5B-Instruct** | Zero-Shot Pre-Trained LLM (Pass@1) | {base_metrics.get('Executable Plan %', '0.0%')} | {base_metrics.get('Zero-Viol %', '0.0%')} | {base_metrics.get('Survival %', '0.0%')} | {base_metrics.get('ICU Overflows', 0)} | {base_metrics.get('Vent Overflows', 0)} | {base_metrics.get('Total Violations', 'N/A')} |\n"
-        f"| **GoldenHour-RL (Step 120)** | Verifier-Guided GRPO LoRA (Pass@1) | **{rl_metrics.get('Executable Plan %', 'N/A')}** | **{rl_metrics.get('Zero-Viol %', 'N/A')}** | **{rl_metrics.get('Survival %', 'N/A')}** | **{rl_metrics.get('ICU Overflows', 'N/A')}** | **{rl_metrics.get('Vent Overflows', 'N/A')}** | **{rl_metrics.get('Total Violations', 'N/A')}** |\n"
+        f"| **GoldenHour-RL (GRPO)** | Verifier-Guided LoRA (Pass@1) | **{rl_metrics.get('Executable Plan %', 'N/A')}** | **{rl_metrics.get('Zero-Viol %', 'N/A')}** | **{rl_metrics.get('Survival %', 'N/A')}** | **{rl_metrics.get('ICU Overflows', 'N/A')}** | **{rl_metrics.get('Vent Overflows', 'N/A')}** | **{rl_metrics.get('Total Violations', 'N/A')}** |\n"
         "| **Oracle Target Schedule** | Ground-Truth Solver (Upper Bound) | 100.0% | **100.0%** | **100.0%** | **0** | **0** | **0** |"
     )
 
@@ -109,15 +109,19 @@ def commit_and_push_readme():
     import subprocess
     root_dir = Path(__file__).resolve().parent.parent
     try:
+        status = subprocess.check_output(["git", "status", "--porcelain", "README.md"], cwd=root_dir).decode("utf-8").strip()
+        if not status:
+            print("[Git] README.md has no changes, skipping commit.")
+            return
         subprocess.check_call(["git", "add", "README.md"], cwd=root_dir)
-        subprocess.check_call(["git", "commit", "-m", "benchmark: add empirical Base vs GoldenHour-RL Step 120 evaluation"], cwd=root_dir)
+        subprocess.check_call(["git", "commit", "-m", "benchmark: add empirical Base vs GoldenHour-RL GRPO evaluation"], cwd=root_dir)
         subprocess.check_call(["git", "push", "origin", "main"], cwd=root_dir)
         print("[Git] Successfully pushed updated README.md to GitHub main!")
     except Exception as e:
         print(f"[Git] Push error: {e}")
 
 
-if __name__ == "__main__":
+def run_pipeline_check():
     t_status, t_fail = check_training_status()
     print(f"[Training Kernel] Status: {t_status} | Failure: {t_fail}")
     
@@ -133,12 +137,30 @@ if __name__ == "__main__":
         rl_res = e_data.get("goldenhour_rl_grpo", {})
         append_benchmark_to_readme(base_res, rl_res)
         commit_and_push_readme()
+        return True
     elif "RUNNING" in str(e_status):
-        print("\n[Pipeline] Evaluation benchmark kernel is actively RUNNING on Kaggle GPU. Standing by for completion...")
+        print("\n[Pipeline] Evaluation benchmark kernel is actively RUNNING on Kaggle GPU. Standing by...")
+        return False
     elif "ERROR" in str(e_status):
         print("\n[Pipeline] Evaluation benchmark kernel encountered an ERROR. Please inspect logs.")
+        return False
     elif "COMPLETE" in str(e_status) and not e_data:
         print("\n[Pipeline] Evaluation kernel completed but eval_summary.json not yet parsed.")
+        return False
     else:
         print("\n[Pipeline] Monitor standing by.")
-        print("\n[Pipeline] Training kernel is actively progressing. Monitor is standing by.")
+        return False
+
+
+if __name__ == "__main__":
+    import time
+    if "--poll" in sys.argv:
+        print("[Pipeline] Starting continuous monitor poll loop (interval=60s)...")
+        while True:
+            done = run_pipeline_check()
+            if done:
+                print("[Pipeline] Evaluation completed and processed!")
+                break
+            time.sleep(60)
+    else:
+        run_pipeline_check()
