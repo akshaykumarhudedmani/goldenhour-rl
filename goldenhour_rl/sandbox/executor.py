@@ -14,6 +14,20 @@ SAFE_MODULES = {
     "json", "math", "re", "collections", "itertools", "heapq", "typing", "copy", "dataclasses", "enum"
 }
 
+def _safe_getattr(obj, name, *default):
+    """Safe getattr wrapper that forbids access to private/dunder attributes."""
+    if not isinstance(name, str) or name.startswith("_"):
+        raise PermissionError(f"SecurityViolation: Access to private/dunder attribute '{name}' via getattr is forbidden.")
+    return getattr(obj, name, *default)
+
+
+def _safe_hasattr(obj, name):
+    """Safe hasattr wrapper that returns False for private/dunder attributes."""
+    if not isinstance(name, str) or name.startswith("_"):
+        return False
+    return hasattr(obj, name)
+
+
 # Safe builtins allowed in generated dispatch functions
 SAFE_BUILTINS = {
     "dict": dict,
@@ -43,11 +57,12 @@ SAFE_BUILTINS = {
     "reversed": reversed,
     "next": next,
     "iter": iter,
-    "hasattr": hasattr,
-    "getattr": getattr,
+    "hasattr": _safe_hasattr,
+    "getattr": _safe_getattr,
     "print": lambda *args, **kwargs: None,
     "TimeoutError": TimeoutError,
     "Exception": Exception,
+    "PermissionError": PermissionError,
     "__build_class__": __build_class__,
     "object": object,
     "type": type,
@@ -71,7 +86,6 @@ BANNED_NAMES = {
     "globals",
     "locals",
     "vars",
-    "getattr",
     "setattr",
     "delattr",
 }

@@ -282,5 +282,39 @@ def test_specification_gaming_positive_reward_trap_eliminated():
     assert (fmt_crash + ver_crash) <= -1.5
 
 
+def test_safe_getattr_and_hasattr_security():
+    """Verify that _safe_getattr allows safe attribute lookups but strictly blocks private/dunder traversal."""
+    class Dummy:
+        def __init__(self):
+            self.patient_id = "PAT_1"
+            self._secret = "hidden"
+
+    d = Dummy()
+    # Benign lookups via execute_dispatch_code
+    code_ok = (
+        "def get_dispatch_plan():\n"
+        "    class Item:\n"
+        "        val = 42\n"
+        "    x = getattr(Item, 'val', 0)\n"
+        "    has_val = hasattr(Item, 'val')\n"
+        "    assert x == 42 and has_val is True\n"
+        "    return []\n"
+    )
+    res_ok = execute_dispatch_code(code_ok)
+    assert res_ok["ok"] is True
+
+    # Malicious lookup trying to reach dunders dynamically
+    code_bad = (
+        "def get_dispatch_plan():\n"
+        "    dunder = '__cl' + 'ass__'\n"
+        "    cls = getattr([], dunder)\n"
+        "    return []\n"
+    )
+    res_bad = execute_dispatch_code(code_bad)
+    assert res_bad["ok"] is False
+    assert "SecurityViolation" in res_bad.get("error", "") or "PermissionError" in res_bad.get("error", "")
+
+
+
 
 
