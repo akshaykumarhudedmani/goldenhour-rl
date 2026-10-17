@@ -42,6 +42,8 @@ SAFE_BUILTINS = {
     "map": map,
     "reversed": reversed,
     "print": lambda *args, **kwargs: None,
+    "TimeoutError": TimeoutError,
+    "Exception": Exception,
 }
 
 BANNED_NAMES = {
@@ -98,7 +100,79 @@ def validate_ast(code_str: str) -> Optional[str]:
         if isinstance(node, ast.Attribute) and (node.attr.startswith("__") or node.attr in BANNED_NAMES):
             return f"SecurityViolation: Access to internal attribute '{node.attr}' is forbidden."
 
-    return None
+class LoopBoundingTransformer(ast.NodeTransformer):
+    """Injects an iteration counter into all While and For loops to terminate infinite loops in <1ms."""
+    def __init__(self, max_iterations: int = 5000):
+        self.max_iterations = max_iterations
+        self.loop_id = 0
+
+    def visit_While(self, node: ast.While):
+        self.generic_visit(node)
+        self.loop_id += 1
+        counter_name = f"__loop_cnt_{self.loop_id}__"
+        init_counter = ast.Assign(
+            targets=[ast.Name(id=counter_name, ctx=ast.Store())],
+            value=ast.Constant(value=0)
+        )
+        check_counter = ast.If(
+            test=ast.Compare(
+                left=ast.Name(id=counter_name, ctx=ast.Load()),
+                ops=[ast.Gt()],
+                comparators=[ast.Constant(value=self.max_iterations)]
+            ),
+            body=[
+                ast.Raise(
+                    exc=ast.Call(
+                        func=ast.Name(id="TimeoutError", ctx=ast.Load()),
+                        args=[ast.Constant(value="ExecutionTimeout: Loop iteration limit exceeded")],
+                        keywords=[]
+                    )
+                )
+            ],
+            orelse=[]
+        )
+        increment_counter = ast.AugAssign(
+            target=ast.Name(id=counter_name, ctx=ast.Store()),
+            op=ast.Add(),
+            value=ast.Constant(value=1)
+        )
+        node.body.insert(0, check_counter)
+        node.body.insert(0, increment_counter)
+        return [init_counter, node]
+
+    def visit_For(self, node: ast.For):
+        self.generic_visit(node)
+        self.loop_id += 1
+        counter_name = f"__for_cnt_{self.loop_id}__"
+        init_counter = ast.Assign(
+            targets=[ast.Name(id=counter_name, ctx=ast.Store())],
+            value=ast.Constant(value=0)
+        )
+        check_counter = ast.If(
+            test=ast.Compare(
+                left=ast.Name(id=counter_name, ctx=ast.Load()),
+                ops=[ast.Gt()],
+                comparators=[ast.Constant(value=self.max_iterations)]
+            ),
+            body=[
+                ast.Raise(
+                    exc=ast.Call(
+                        func=ast.Name(id="TimeoutError", ctx=ast.Load()),
+                        args=[ast.Constant(value="ExecutionTimeout: Loop iteration limit exceeded")],
+                        keywords=[]
+                    )
+                )
+            ],
+            orelse=[]
+        )
+        increment_counter = ast.AugAssign(
+            target=ast.Name(id=counter_name, ctx=ast.Store()),
+            op=ast.Add(),
+            value=ast.Constant(value=1)
+        )
+        node.body.insert(0, check_counter)
+        node.body.insert(0, increment_counter)
+        return [init_counter, node]
 
 
 def execute_dispatch_code(code_str: str, timeout_sec: float = 2.0, state_str: str = "{}") -> Dict[str, Any]:
@@ -120,7 +194,17 @@ def execute_dispatch_code(code_str: str, timeout_sec: float = 2.0, state_str: st
     if ast_error:
         return {"ok": False, "error": ast_error, "plan": None}
 
-    # Step 2: Thread-isolated execution with strict timeout
+    # Step 2: AST Loop-Bounding Transformation to prevent runaway loops from holding GIL
+    try:
+        tree = ast.parse(code_str)
+        transformer = LoopBoundingTransformer(max_iterations=5000)
+        bounded_tree = transformer.visit(tree)
+        ast.fix_missing_locations(bounded_tree)
+        executable_target = compile(bounded_tree, "<dispatch>", "exec")
+    except Exception:
+        executable_target = code_str
+
+    # Step 3: Thread-isolated execution with strict timeout
     result = {"ok": False, "error": "ExecutionTimeout", "plan": None}
 
     def _sandboxed_runner():
@@ -148,7 +232,7 @@ def execute_dispatch_code(code_str: str, timeout_sec: float = 2.0, state_str: st
             "emergency_telemetry": parsed_state,
         }
         try:
-            exec(code_str, namespace, namespace)
+            exec(executable_target, namespace, namespace)
             if "get_dispatch_plan" not in namespace:
                 # Fallback: check if script defined dispatch_plan, plan, or schedule as a list
                 for candidate in ("dispatch_plan", "plan", "schedule", "result"):
@@ -179,6 +263,8 @@ def execute_dispatch_code(code_str: str, timeout_sec: float = 2.0, state_str: st
                 return
 
             result = {"ok": True, "error": None, "plan": plan}
+        except TimeoutError:
+            result = {"ok": False, "error": "ExecutionTimeout", "plan": None}
         except Exception as exc:
             result = {"ok": False, "error": f"{type(exc).__name__}: {str(exc)}", "plan": None}
 
