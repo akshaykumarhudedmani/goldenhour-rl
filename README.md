@@ -62,8 +62,8 @@ Evaluated across $N=100$ out-of-distribution crisis scenarios (`--dry_run` basel
 | **Greedy Nearest Hospital** | Programmatic Heuristic Baseline | 100.0% | 34.0% | 98.5% | 66 | 47 | 119 |
 | **Base Qwen-1.5B-Instruct** | Zero-Shot Pre-Trained LLM (Pass@1) | 14.0% | 0.0% | 2.0% | 2 | 2 | 205 |
 | **Base Qwen-1.5B-Instruct** | Zero-Shot Pre-Trained LLM (Best-of-4) | 84.0% | 12.0% | 43.8% | 7 | 17 | 120 |
-| **GoldenHour-RL (GRPO)** | Verifier-Guided LoRA (Pass@1) | **6.0%** | **0.0%** | **2.5%** | **0** | **0** | **198** |
-| **GoldenHour-RL (GRPO)** | Verifier-Guided LoRA (Best-of-4) | **86.0%** | **8.0%** | **37.8%** | **8** | **8** | **155** |
+| **GoldenHour-RL (GRPO)** | Verifier-Guided LoRA (Pass@1) | **8.0%** | **0.0%** | **1.0%** | **2** | **0** | **213** |
+| **GoldenHour-RL (GRPO)** | Verifier-Guided LoRA (Best-of-4) | **86.0%** | **8.0%** | **41.3%** | **11** | **17** | **133** |
 | **Oracle Target Schedule** | Ground-Truth Solver (Upper Bound) | 100.0% | **100.0%** | **100.0%** | **0** | **0** | **0** |
 
 > [!IMPORTANT]
