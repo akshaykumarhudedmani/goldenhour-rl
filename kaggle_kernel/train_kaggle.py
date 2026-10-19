@@ -4,7 +4,12 @@ import subprocess
 import torch
 
 # 1. Environment Secrets & Config
-# Retrieve credentials securely from Kaggle UserSecrets or OS environment
+# Retrieve credentials securely from local config, Kaggle UserSecrets, or OS environment
+try:
+    import secrets_config
+except Exception:
+    pass
+
 try:
     from kaggle_secrets import UserSecretsClient
     user_secrets = UserSecretsClient()
@@ -24,6 +29,8 @@ print(f"CUDA Available: {torch.cuda.is_available()}")
 if torch.cuda.is_available():
     print(f"GPU Model: {torch.cuda.get_device_name(0)}")
     print(f"Total VRAM: {torch.cuda.get_device_properties(0).total_memory / (1024**3):.2f} GB")
+print(f"Hugging Face Token Configured: {bool(os.environ.get('HF_TOKEN'))}")
+print(f"Weights & Biases Key Configured: {bool(os.environ.get('WANDB_API_KEY'))}")
 
 # 2. Install Required Dependencies
 print("\n[Step 1/6] Installing dependencies (unsloth, trl, peft, wandb)...")
@@ -103,8 +110,8 @@ if os.path.exists(sft_lora_path) and os.environ.get("HF_TOKEN"):
 
 # 8. Stage 2: GRPO Reinforcement Learning Loop
 grpo_output = "/kaggle/working/outputs/goldenhour_grpo"
-max_steps = int(os.environ.get("MAX_STEPS", "80"))
-save_steps = int(os.environ.get("SAVE_STEPS", "50"))
+max_steps = int(os.environ.get("MAX_STEPS", "50"))
+save_steps = int(os.environ.get("SAVE_STEPS", "25"))
 
 print(f"\n[Step 7/7] Stage 2: GRPO Policy Optimization ({max_steps} steps, G=8 rollouts, save_steps={save_steps})...")
 train_cmd = [
