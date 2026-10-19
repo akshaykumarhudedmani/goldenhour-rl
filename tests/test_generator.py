@@ -44,3 +44,32 @@ def test_zero_leakage_and_trap_routes():
 
     # Trap routes must be actively present across the dataset
     assert trap_routes_found > 25, "Trap routes are missing, risk of statistical cue leakage!"
+
+
+def test_verified_sft_sample_generation():
+    """Verify that SFT dataset generator produces 100% verified samples with valid ChatML messages."""
+    from goldenhour_rl.data.sft_generator import generate_verified_sft_sample
+    from goldenhour_rl.sandbox.executor import execute_dispatch_code
+    from goldenhour_rl.eval.benchmark import extract_python_code
+
+    for seed in range(5):
+        sft_sample = generate_verified_sft_sample(seed=700 + seed)
+        assert "messages" in sft_sample
+        assert len(sft_sample["messages"]) == 2
+        assert sft_sample["messages"][0]["role"] == "user"
+        assert sft_sample["messages"][1]["role"] == "assistant"
+
+        # Check reasoning trace and code block in completion
+        comp = sft_sample["completion"]
+        assert "<think>" in comp and "</think>" in comp
+        assert "```python" in comp
+
+        # Extract code and verify it executes with 0 violations
+        code = extract_python_code(comp)
+        assert code is not None
+        exec_res = execute_dispatch_code(code, timeout_sec=2.0, state_str=sft_sample["state_json"])
+        assert exec_res["ok"] is True
+        ver_res = verify_dispatch_plan(exec_res["plan"], sft_sample["state_json"])
+        assert ver_res["valid"] is True
+        assert len(ver_res["violations"]) == 0
+

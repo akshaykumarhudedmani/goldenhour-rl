@@ -4,5 +4,5 @@ Uses Group Relative Policy Optimization (GRPO) to post-train lightweight LLMs
 for multi-constraint emergency triage and ambulance routing with zero physical hallucinations.
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 __author__ = "Akshay Kumar"

@@ -51,10 +51,10 @@ print("\n[Step 3/6] Running sandbox verification unit tests...")
 subprocess.check_call([sys.executable, "-m", "pytest", "tests/", "-v"])
 
 # 5. Generate Training & Evaluation Datasets
-print("\n[Step 4/6] Synthesizing verifiable emergency crisis datasets...")
+print("\n[Step 4/7] Synthesizing verified Cold-Start SFT and Evaluation datasets...")
 subprocess.check_call([
-    sys.executable, "-m", "goldenhour_rl.data.crisis_generator",
-    "--output", "data/crisis_train.jsonl", "--num_samples", "300", "--seed", "42"
+    sys.executable, "-m", "goldenhour_rl.data.sft_generator",
+    "--output", "data/crisis_sft.jsonl", "--num_samples", "300", "--seed", "42"
 ])
 subprocess.check_call([
     sys.executable, "-m", "goldenhour_rl.data.crisis_generator",
@@ -62,42 +62,82 @@ subprocess.check_call([
 ])
 
 # 6. Run Baseline Benchmark
-print("\n[Step 5/6] Benchmarking baseline dispatch heuristics...")
+print("\n[Step 5/7] Benchmarking baseline dispatch heuristics...")
 subprocess.check_call([
     sys.executable, "-m", "goldenhour_rl.eval.benchmark",
     "--eval_data", "data/crisis_eval.jsonl", "--dry_run"
 ])
 
-# 7. Run GRPO Post-Training Loop
-max_steps = int(os.environ.get("MAX_STEPS", "50"))
-print(f"\n[Step 6/6] Launching Unsloth 4-bit QLoRA + GRPO training loop ({max_steps} steps)...")
+# 7. Stage 1: Cold-Start Supervised Fine-Tuning (SFT)
+sft_output = "/kaggle/working/outputs/goldenhour_sft"
+print("\n[Step 6/7] Stage 1: Cold-Start SFT (Anchoring syntax & dispatch logic)...")
+sft_cmd = [
+    sys.executable, "-m", "goldenhour_rl.training.train_sft",
+    "--model_name", "Qwen/Qwen2.5-Coder-1.5B-Instruct",
+    "--data_path", "data/crisis_sft.jsonl",
+    "--output_dir", sft_output,
+    "--epochs", "2",
+]
+if os.environ.get("WANDB_API_KEY"):
+    sft_cmd.append("--use_wandb")
+subprocess.check_call(sft_cmd)
+
+# Upload Stage 1 SFT checkpoint immediately to guarantee preservation
+sft_lora_path = f"{sft_output}/final_lora"
+if os.path.exists(sft_lora_path) and os.environ.get("HF_TOKEN"):
+    try:
+        print("\n[Upload Stage 1] Preserving Cold-Start SFT LoRA checkpoint on Hugging Face Hub (path_in_repo='sft_checkpoint')...")
+        from huggingface_hub import HfApi
+        api = HfApi(token=os.environ["HF_TOKEN"])
+        repo_id = "akshaykumarhudedmani/goldenhour-rl"
+        api.create_repo(repo_id=repo_id, exist_ok=True)
+        api.upload_folder(
+            folder_path=sft_lora_path,
+            repo_id=repo_id,
+            path_in_repo="sft_checkpoint",
+            commit_message="Upload Stage 1: Cold-Start SFT LoRA checkpoint"
+        )
+        print(f"[Done] Stage 1 SFT checkpoint pushed to: https://huggingface.co/{repo_id}/tree/main/sft_checkpoint")
+    except Exception as e:
+        print(f"[Upload Warning] SFT upload notice: {e}")
+
+# 8. Stage 2: GRPO Reinforcement Learning Loop
+grpo_output = "/kaggle/working/outputs/goldenhour_grpo"
+max_steps = int(os.environ.get("MAX_STEPS", "150"))
+
+print(f"\n[Step 7/7] Stage 2: GRPO Policy Optimization ({max_steps} steps, G=8 rollouts)...")
 train_cmd = [
     sys.executable, "-m", "goldenhour_rl.training.train_grpo",
     "--model_name", "Qwen/Qwen2.5-Coder-1.5B-Instruct",
-    "--data_path", "data/crisis_train.jsonl",
-    "--output_dir", "/kaggle/working/outputs/goldenhour_grpo",
+    "--init_lora_path", sft_lora_path,
+    "--data_path", "data/crisis_sft.jsonl",
+    "--output_dir", grpo_output,
     "--max_steps", str(max_steps),
+    "--num_generations", "8",
 ]
 if os.environ.get("WANDB_API_KEY"):
     train_cmd.append("--use_wandb")
 
 subprocess.check_call(train_cmd)
 
-# 8. Upload Trained Adapter to Hugging Face Hub
-output_lora = "/kaggle/working/outputs/goldenhour_grpo/final_lora"
-if os.path.exists(output_lora):
-    print("\n[Step 7/7] Uploading trained LoRA weights to Hugging Face Hub...")
+# 9. Upload Final GRPO Adapter to Hugging Face Hub Root
+final_lora = f"{grpo_output}/final_lora"
+if not os.path.exists(final_lora):
+    final_lora = sft_lora_path
+
+if os.path.exists(final_lora) and os.environ.get("HF_TOKEN"):
+    print("\n[Upload Stage 2] Uploading GoldenHour-RL GRPO LoRA weights to Hugging Face Hub root...")
     from huggingface_hub import HfApi
     api = HfApi(token=os.environ["HF_TOKEN"])
     repo_id = "akshaykumarhudedmani/goldenhour-rl"
     api.create_repo(repo_id=repo_id, exist_ok=True)
     api.upload_folder(
-        folder_path=output_lora,
+        folder_path=final_lora,
         repo_id=repo_id,
-        commit_message=f"Upload GoldenHour-RL GRPO LoRA weights ({max_steps} steps)"
+        commit_message=f"Upload Stage 2: GoldenHour-RL GRPO LoRA weights ({max_steps} steps, G=8)"
     )
-    print(f"[Done] Model successfully pushed to: https://huggingface.co/{repo_id}")
+    print(f"[Done] Stage 2 GRPO model successfully pushed to: https://huggingface.co/{repo_id}")
 
 print("\n" + "=" * 70)
-print("     GOLDENHOUR-RL POST-TRAINING PIPELINE COMPLETED SUCCESSFULLY!")
+print("     GOLDENHOUR-RL TWO-STAGE POST-TRAINING PIPELINE COMPLETED!")
 print("=" * 70)

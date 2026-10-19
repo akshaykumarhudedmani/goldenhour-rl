@@ -340,6 +340,74 @@ def test_dual_hospital_map_schema_drift():
     assert len(m2.values()) == 2
 
 
+def test_strict_vs_lenient_metric_parity():
+    """Verify that strict survival strictly deducts ICU/vent capacity overflows."""
+    from goldenhour_rl.eval.benchmark import evaluate_dataset_on_strategy
+    import tempfile
+
+    sample = generate_scenario(seed=123)
+    with tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False, encoding="utf-8") as f:
+        f.write(json.dumps(sample) + "\n")
+        temp_path = f.name
+
+    res = evaluate_dataset_on_strategy(temp_path, "greedy_nearest")
+    assert "patient_survival_strict_rate" in res
+    assert "patient_survival_lenient_rate" in res
+    assert res["patient_survival_strict_rate"] <= res["patient_survival_lenient_rate"]
+
+    ref_res = evaluate_dataset_on_strategy(temp_path, "reference")
+    assert ref_res["patient_survival_strict_rate"] == 100.0
+    assert ref_res["patient_survival_lenient_rate"] == 100.0
+
+
+def test_algorithmic_solver_execution():
+    """Verify that a dynamic algorithmic dispatch function executes safely in the sandbox."""
+    sample = generate_scenario(seed=555)
+    # Dynamic algorithmic solver code
+    code = (
+        "def get_dispatch_plan(state):\n"
+        "    patients = state['patients']\n"
+        "    ambulances = state['ambulances']\n"
+        "    hospitals = state['hospitals']\n"
+        "    plan = []\n"
+        "    used_amb = set()\n"
+        "    hosp_usage = {h: {'icu': 0, 'vent': 0} for h in hospitals}\n"
+        "    # Sort critical patients first\n"
+        "    sorted_p = sorted(patients, key=lambda p: (not p['requires_ventilator'], p['survival_window_mins']))\n"
+        "    for p in sorted_p:\n"
+        "        p_id = p['patient_id']\n"
+        "        # Find first available ambulance\n"
+        "        for a in ambulances:\n"
+        "            a_id = a['ambulance_id']\n"
+        "            if a_id not in used_amb:\n"
+        "                # Find first hospital with capacity\n"
+        "                for h_id, cap in hospitals.items():\n"
+        "                    if hosp_usage[h_id]['icu'] < cap['icu_beds']:\n"
+        "                        if not p['requires_ventilator'] or hosp_usage[h_id]['vent'] < cap['ventilators']:\n"
+        "                            hosp_usage[h_id]['icu'] += 1\n"
+        "                            if p['requires_ventilator']:\n"
+        "                                hosp_usage[h_id]['vent'] += 1\n"
+        "                            used_amb.add(a_id)\n"
+        "                            plan.append({'patient_id': p_id, 'ambulance_id': a_id, 'hospital_id': h_id})\n"
+        "                            break\n"
+        "                if a_id in used_amb:\n"
+        "                    break\n"
+        "    return plan\n"
+    )
+    res = execute_dispatch_code(code, timeout_sec=2.0, state_str=sample["state_json"])
+    assert res["ok"] is True
+    assert isinstance(res["plan"], list)
+    assert len(res["plan"]) > 0
+
+
+def test_prompt_no_state_none():
+    """Verify system prompt does not have the state=None trap and explicitly warns against re-declaring state."""
+    sample = generate_scenario(seed=999)
+    assert "state=None" not in sample["prompt"]
+    assert "DO NOT re-declare or hardcode `state = {...}`" in sample["prompt"]
+
+
+
 
 
 

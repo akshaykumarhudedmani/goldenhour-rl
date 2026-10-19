@@ -72,7 +72,7 @@ def eval_model(model, tokenizer, eval_path="data/crisis_eval.jsonl", max_samples
     with open(eval_path, "r", encoding="utf-8") as f:
         rows = [json.loads(line) for line in f][:max_samples]
 
-    zero_viol, compiled_ok, total_pats, survived, icu_ov, vent_ov, total_viols = 0, 0, 0, 0, 0, 0, 0
+    zero_viol, compiled_ok, total_pats, survived_strict, survived_lenient, icu_ov, vent_ov, total_viols = 0, 0, 0, 0, 0, 0, 0, 0
 
     mode_str = f"Pass@{num_tries} (T={temperature})" if num_tries == 1 else f"Verifier Best-of-{num_tries} (T={temperature}, top_k={top_k})"
     print(f"\n---> Starting Evaluation Mode: {mode_str} across {len(rows)} scenarios")
@@ -160,7 +160,8 @@ def eval_model(model, tokenizer, eval_path="data/crisis_eval.jsonl", max_samples
             total_viols += n_p
         elif best_ver["valid"]:
             zero_viol += 1
-            survived += n_p
+            survived_strict += n_p
+            survived_lenient += n_p
         else:
             v_list = best_ver["violations"]
             total_viols += len(v_list)
@@ -169,10 +170,11 @@ def eval_model(model, tokenizer, eval_path="data/crisis_eval.jsonl", max_samples
             stats = best_ver.get("stats", {})
             survived_count = stats.get("survived_count")
             if survived_count is not None:
-                survived += max(0, survived_count)
+                survived_strict += max(0, survived_count)
             else:
-                breaches = sum(1 for v in v_list if "SLA" in v or "Unassigned" in v or "Hallucination" in v)
-                survived += max(0, n_p - breaches)
+                survived_strict += max(0, n_p - len(v_list))
+            breaches = sum(1 for v in v_list if "SLA" in v or "Unassigned" in v or "Hallucination" in v)
+            survived_lenient += max(0, n_p - breaches)
 
         if (idx + 1) % 10 == 0 or (idx + 1) == len(rows):
             print(f"[Progress {idx+1}/{len(rows)}] Executable: {compiled_ok}/{idx+1} | Zero-Viol: {zero_viol}/{idx+1}")
@@ -182,7 +184,9 @@ def eval_model(model, tokenizer, eval_path="data/crisis_eval.jsonl", max_samples
         "Mode": mode_str,
         "Executable Plan %": f"{100.0 * compiled_ok / n:.1f}%",
         "Zero-Viol %": f"{100.0 * zero_viol / n:.1f}%",
-        "Survival %": f"{100.0 * survived / max(1, total_pats):.1f}%",
+        "Survival %": f"{100.0 * survived_strict / max(1, total_pats):.1f}%",
+        "Strict Survival %": f"{100.0 * survived_strict / max(1, total_pats):.1f}%",
+        "Lenient Survival %": f"{100.0 * survived_lenient / max(1, total_pats):.1f}%",
         "ICU Overflows": icu_ov,
         "Vent Overflows": vent_ov,
         "Total Violations": total_viols,

@@ -48,6 +48,7 @@ def evaluate_dataset_on_strategy(dataset_path: str, strategy_name: str) -> Dict[
     total_unassigned = 0
     total_icu_overflows = 0
     total_vent_overflows = 0
+    total_survived_strict = 0
 
     for sample in samples:
         state = json.loads(sample["state_json"])
@@ -73,16 +74,20 @@ def evaluate_dataset_on_strategy(dataset_path: str, strategy_name: str) -> Dict[
         total_unassigned += stats.get("unassigned_count", 0)
         total_icu_overflows += stats.get("icu_overflow_count", 0)
         total_vent_overflows += stats.get("vent_overflow_count", 0)
+        total_survived_strict += stats.get("survived_count", 0)
 
     pass_rate = (zero_violation_count / total_scenarios) * 100 if total_scenarios > 0 else 0.0
     avg_margin = (total_sla_margins / zero_violation_count) if zero_violation_count > 0 else 0.0
-    patient_survival_rate = max(0.0, ((total_patients - total_breaches - total_unassigned) / total_patients * 100)) if total_patients > 0 else 0.0
+    patient_survival_strict = (total_survived_strict / total_patients * 100) if total_patients > 0 else 0.0
+    patient_survival_lenient = max(0.0, ((total_patients - total_breaches - total_unassigned) / total_patients * 100)) if total_patients > 0 else 0.0
 
     return {
         "strategy": strategy_name,
         "scenarios": total_scenarios,
         "zero_violation_rate": round(pass_rate, 2),
-        "patient_survival_sla_rate": round(patient_survival_rate, 2),
+        "patient_survival_strict_rate": round(patient_survival_strict, 2),
+        "patient_survival_sla_rate": round(patient_survival_strict, 2),
+        "patient_survival_lenient_rate": round(patient_survival_lenient, 2),
         "total_violations": total_violations,
         "icu_overflows": total_icu_overflows,
         "vent_overflows": total_vent_overflows,
@@ -178,6 +183,7 @@ def evaluate_model_on_dataset(
     total_unassigned = 0
     total_icu_overflows = 0
     total_vent_overflows = 0
+    total_survived_strict = 0
 
     mode_label = f"Pass@{num_tries} (T={temperature})" if num_tries == 1 else f"Best-of-{num_tries} (T={temperature})"
     print(f"[GoldenHour-RL Benchmark] Running inference [{mode_label}] across {len(samples)} scenarios on {device}...")
@@ -245,6 +251,7 @@ def evaluate_model_on_dataset(
             total_unassigned += stats.get("unassigned_count", 0)
             total_icu_overflows += stats.get("icu_overflow_count", 0)
             total_vent_overflows += stats.get("vent_overflow_count", 0)
+            total_survived_strict += stats.get("survived_count", 0)
         else:
             total_unassigned += n_p
             total_violations += n_p
@@ -253,14 +260,17 @@ def evaluate_model_on_dataset(
     executable_rate = (executable_count / total_scenarios) * 100 if total_scenarios > 0 else 0.0
     pass_rate = (zero_violation_count / total_scenarios) * 100 if total_scenarios > 0 else 0.0
     avg_margin = (total_sla_margins / zero_violation_count) if zero_violation_count > 0 else 0.0
-    patient_survival_rate = max(0.0, ((total_patients - total_breaches - total_unassigned) / total_patients * 100)) if total_patients > 0 else 0.0
+    patient_survival_strict = (total_survived_strict / total_patients * 100) if total_patients > 0 else 0.0
+    patient_survival_lenient = max(0.0, ((total_patients - total_breaches - total_unassigned) / total_patients * 100)) if total_patients > 0 else 0.0
 
     return {
         "strategy": f"GoldenHour-RL ({Path(lora_path).name}) [{mode_label}]",
         "scenarios": total_scenarios,
         "executable_plan_rate": round(executable_rate, 2),
         "zero_violation_rate": round(pass_rate, 2),
-        "patient_survival_sla_rate": round(patient_survival_rate, 2),
+        "patient_survival_strict_rate": round(patient_survival_strict, 2),
+        "patient_survival_sla_rate": round(patient_survival_strict, 2),
+        "patient_survival_lenient_rate": round(patient_survival_lenient, 2),
         "total_violations": total_violations,
         "icu_overflows": total_icu_overflows,
         "vent_overflows": total_vent_overflows,
@@ -308,19 +318,22 @@ def main():
         )
         results.append(model_res)
 
-    header = f"{'Strategy':<20} | {'Executable %':<14} | {'Zero-Viol %':<12} | {'Survival %':<12} | {'ICU Overflows':<14} | {'Vent Overflows':<14} | {'Violations'}"
+    header = f"{'Strategy':<20} | {'Executable %':<14} | {'Zero-Viol %':<12} | {'Strict Surv %':<14} | {'Lenient Surv %':<14} | {'ICU Ov':<8} | {'Vent Ov':<8} | {'Violations'}"
     print(header)
     print("-" * len(header))
 
     for r in results:
         exec_rate = f"{r.get('executable_plan_rate', 100.0):.1f}%"
+        strict_surv = f"{r.get('patient_survival_strict_rate', r.get('patient_survival_sla_rate', 0.0)):.1f}%"
+        lenient_surv = f"{r.get('patient_survival_lenient_rate', 0.0):.1f}%"
         line = (
             f"{r['strategy']:<20} | "
             f"{exec_rate:<14} | "
             f"{r['zero_violation_rate']:<10.1f}% | "
-            f"{r['patient_survival_sla_rate']:<10.1f}% | "
-            f"{r['icu_overflows']:<14} | "
-            f"{r['vent_overflows']:<14} | "
+            f"{strict_surv:<14} | "
+            f"{lenient_surv:<14} | "
+            f"{r['icu_overflows']:<8} | "
+            f"{r['vent_overflows']:<8} | "
             f"{r['total_violations']}"
         )
         print(line)
