@@ -103,6 +103,30 @@ def run_training(args):
 
     dataset = dataset.map(ensure_conversational_prompt)
 
+    from transformers import TrainerCallback
+
+    class RemoteHubCheckpointCallback(TrainerCallback):
+        """Automatically synchronizes intermediate checkpoints (e.g. step 50, 80) to HF Hub."""
+        def __init__(self, repo_id="akshaykumarhudedmani/goldenhour-rl"):
+            self.repo_id = repo_id
+
+        def on_save(self, args, state, control, **kwargs):
+            checkpoint_dir = Path(args.output_dir) / f"checkpoint-{state.global_step}"
+            token = os.environ.get("HF_TOKEN")
+            if checkpoint_dir.exists() and token:
+                try:
+                    from huggingface_hub import HfApi
+                    api = HfApi(token=token)
+                    api.upload_folder(
+                        folder_path=str(checkpoint_dir),
+                        repo_id=self.repo_id,
+                        path_in_repo=f"checkpoints/checkpoint-{state.global_step}",
+                        commit_message=f"Auto-save: GRPO Step {state.global_step} checkpoint"
+                    )
+                    print(f"\n[Remote Hub] Successfully synced checkpoint-{state.global_step} to https://huggingface.co/{self.repo_id}/tree/main/checkpoints/checkpoint-{state.global_step}")
+                except Exception as e:
+                    print(f"\n[Remote Hub Warning] Notice syncing checkpoint-{state.global_step}: {e}")
+
     training_args = GRPOConfig(
         output_dir=args.output_dir,
         learning_rate=5e-6,
@@ -113,7 +137,7 @@ def run_training(args):
         max_completion_length=1536,
         max_steps=args.max_steps,
         logging_steps=5,
-        save_steps=50,
+        save_steps=args.save_steps,
         report_to="wandb" if args.use_wandb else "none",
     )
 
@@ -124,9 +148,10 @@ def run_training(args):
         args=training_args,
         train_dataset=dataset,
     )
+    trainer.add_callback(RemoteHubCheckpointCallback())
 
     torch.cuda.reset_peak_memory_stats()
-    print("[GoldenHour-RL] Commencing GRPO reinforcement learning training loop...")
+    print(f"[GoldenHour-RL] Commencing GRPO reinforcement learning training loop ({args.max_steps} steps, save every {args.save_steps})...")
     trainer.train()
 
     peak_vram_gb = torch.cuda.max_memory_allocated() / (1024 ** 3)
@@ -145,7 +170,8 @@ if __name__ == "__main__":
     parser.add_argument("--init_lora_path", type=str, default=None, help="Path to initial Cold-Start SFT LoRA checkpoint")
     parser.add_argument("--data_path", type=str, default="data/crisis_train.jsonl")
     parser.add_argument("--output_dir", type=str, default="outputs/goldenhour_grpo")
-    parser.add_argument("--max_steps", type=int, default=150)
+    parser.add_argument("--max_steps", type=int, default=80)
+    parser.add_argument("--save_steps", type=int, default=50, help="Interval for saving and pushing intermediate checkpoints")
     parser.add_argument("--num_generations", type=int, default=8, help="Number of completions per prompt rollout (default: 8)")
     parser.add_argument("--use_wandb", action="store_true")
     parser.add_argument("--mock_cpu", action="store_true", help="Run local CPU dry-run without GPU")

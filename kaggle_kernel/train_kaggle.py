@@ -103,9 +103,10 @@ if os.path.exists(sft_lora_path) and os.environ.get("HF_TOKEN"):
 
 # 8. Stage 2: GRPO Reinforcement Learning Loop
 grpo_output = "/kaggle/working/outputs/goldenhour_grpo"
-max_steps = int(os.environ.get("MAX_STEPS", "150"))
+max_steps = int(os.environ.get("MAX_STEPS", "80"))
+save_steps = int(os.environ.get("SAVE_STEPS", "50"))
 
-print(f"\n[Step 7/7] Stage 2: GRPO Policy Optimization ({max_steps} steps, G=8 rollouts)...")
+print(f"\n[Step 7/7] Stage 2: GRPO Policy Optimization ({max_steps} steps, G=8 rollouts, save_steps={save_steps})...")
 train_cmd = [
     sys.executable, "-m", "goldenhour_rl.training.train_grpo",
     "--model_name", "Qwen/Qwen2.5-Coder-1.5B-Instruct",
@@ -113,6 +114,7 @@ train_cmd = [
     "--data_path", "data/crisis_sft.jsonl",
     "--output_dir", grpo_output,
     "--max_steps", str(max_steps),
+    "--save_steps", str(save_steps),
     "--num_generations", "8",
 ]
 if os.environ.get("WANDB_API_KEY"):
