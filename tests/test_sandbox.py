@@ -315,6 +315,32 @@ def test_safe_getattr_and_hasattr_security():
     assert "SecurityViolation" in res_bad.get("error", "") or "PermissionError" in res_bad.get("error", "")
 
 
+def test_dual_hospital_map_schema_drift():
+    """Verify that DualHospitalMap supports both dict access (.values(), keys) and list indexing ([0])."""
+    from goldenhour_rl.sandbox.executor import DualHospitalMap
+    # Test from dictionary
+    d_hosp = {
+        "HOSP_1": {"hospital_id": "HOSP_1", "icu_beds": 3},
+        "HOSP_2": {"hospital_id": "HOSP_2", "icu_beds": 5},
+    }
+    m1 = DualHospitalMap(d_hosp)
+    assert m1["HOSP_1"]["icu_beds"] == 3
+    assert m1[0]["hospital_id"] == "HOSP_1"
+    assert m1[1]["icu_beds"] == 5
+    assert len(m1.values()) == 2
+
+    # Test from list
+    l_hosp = [
+        {"hospital_id": "HOSP_A", "icu_beds": 2},
+        {"hospital_id": "HOSP_B", "icu_beds": 4},
+    ]
+    m2 = DualHospitalMap(l_hosp)
+    assert m2["HOSP_A"]["icu_beds"] == 2
+    assert m2[0]["hospital_id"] == "HOSP_A"
+    assert len(m2.values()) == 2
+
+
+
 
 
 

@@ -261,6 +261,42 @@ class SafeJsonModule:
     def __getattr__(self, name):
         return getattr(self._real_json, name)
 
+class DualHospitalMap(dict):
+    """
+    Dual-access hospital map that seamlessly supports both dictionary access
+    (by hospital_id string, .values(), .items()) and sequential list access (by integer index).
+    Prevents AttributeError: 'list' object has no attribute 'values' and KeyError: 0 schema drift.
+    """
+    def __init__(self, data=None):
+        self._list = []
+        if isinstance(data, dict):
+            super().__init__(data)
+            self._list = list(data.values())
+        elif isinstance(data, (list, tuple)):
+            data_dict = {}
+            for idx, h in enumerate(data):
+                if isinstance(h, dict):
+                    hid = h.get("hospital_id", h.get("id", f"HOSP_{idx+1}"))
+                    data_dict[hid] = h
+                else:
+                    data_dict[f"HOSP_{idx+1}"] = h
+            super().__init__(data_dict)
+            self._list = list(data)
+        elif data is not None:
+            super().__init__()
+        else:
+            super().__init__()
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            if 0 <= key < len(self._list):
+                return self._list[key]
+            raise IndexError(f"Hospital index {key} out of range (total: {len(self._list)})")
+        return super().__getitem__(key)
+
+    def values(self):
+        return list(self._list)
+
 
 def execute_dispatch_code(code_str: str, timeout_sec: float = 2.0, state_str: str = "{}") -> Dict[str, Any]:
     """
@@ -308,6 +344,8 @@ def execute_dispatch_code(code_str: str, timeout_sec: float = 2.0, state_str: st
         parsed_state = {}
         try:
             parsed_state = json.loads(state_str) if state_str else {}
+            if isinstance(parsed_state, dict) and "hospitals" in parsed_state:
+                parsed_state["hospitals"] = DualHospitalMap(parsed_state["hospitals"])
         except Exception:
             pass
 

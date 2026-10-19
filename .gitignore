@@ -1,49 +1,33 @@
-# Environment & Secrets (NEVER COMMIT)
+# Environment & Secrets
 .env
 .env.*
 !.env.example
-*.token
-*secret*
-kaggle_kernel/
-kaggle_eval/
-_kaggle_test/
-.ipynb_checkpoints/
-scripts/poll_wandb.py
-scripts/check_wandb.py
-scripts/*secret*
-*.zip
-logs/
 
-# Python & Caches
+# Python Bytecode & Environments
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
 .pytest_cache/
-.coverage
-htmlcov/
-
-# Virtual Environments
-venv/
 .venv/
 env/
-ENV/
+venv/
 
-# Project generated data & model artifacts
-data/*.jsonl
-!data/example_crisis.json
+# Machine Learning Checkpoints & Artifacts
 outputs/
-checkpoints/
-final_lora/
 wandb/
+*.safetensors
+*.bin
+*.pt
 
-# Distribution & Build
-build/
+# Packaging & Archives
+*.zip
+*.tar.gz
 dist/
+build/
 *.egg-info/
 
-# IDE & OS files
-.vscode/
-.idea/
-.DS_Store
-Thumbs.db
+# Kaggle Output Artifacts
+kaggle_kernel/out*/
+kaggle_eval/
+_kaggle_test/
+*.log

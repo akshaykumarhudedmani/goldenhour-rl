@@ -17,6 +17,7 @@ EXCLUDED_NAMES = {
     "out",
     "out_live",
     "out_download",
+    "kaggle_eval",
 }
 
 EXCLUDED_EXTENSIONS = {
@@ -25,6 +26,7 @@ EXCLUDED_EXTENSIONS = {
     ".pyd",
     ".token",
     ".zip",
+    ".log",
 }
 
 
