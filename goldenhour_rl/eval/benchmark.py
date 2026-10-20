@@ -285,9 +285,16 @@ def main():
     parser.add_argument("--eval_data", type=str, default="data/crisis_eval.jsonl")
     parser.add_argument("--dry_run", action="store_true", help="Run benchmark across heuristic baselines")
     parser.add_argument("--lora_path", type=str, default=None, help="Path or HuggingFace repo ID of trained LoRA adapter")
+    parser.add_argument("--model_path", type=str, default=None, help="Alias for --lora_path")
     parser.add_argument("--base_model", type=str, default="Qwen/Qwen2.5-Coder-1.5B-Instruct")
     parser.add_argument("--max_samples", type=int, default=50, help="Max scenarios to evaluate")
+    parser.add_argument("--num_samples", type=int, default=None, help="Alias for --max_samples")
+    parser.add_argument("--num_tries", type=int, default=1, help="Completions per scenario (1 for Pass@1, 4 for Best-of-4)")
+    parser.add_argument("--temperature", type=float, default=0.2, help="Sampling temperature")
     args = parser.parse_args()
+
+    lora_path = args.model_path or args.lora_path
+    max_samples = args.num_samples if args.num_samples is not None else args.max_samples
 
     eval_path = Path(args.eval_data)
     if not eval_path.exists():
@@ -309,12 +316,14 @@ def main():
         res = evaluate_dataset_on_strategy(str(eval_path), strat)
         results.append(res)
 
-    if args.lora_path:
+    if lora_path:
         model_res = evaluate_model_on_dataset(
             str(eval_path),
-            args.lora_path,
+            lora_path,
             base_model_name=args.base_model,
-            max_samples=args.max_samples
+            max_samples=max_samples,
+            num_tries=args.num_tries,
+            temperature=args.temperature,
         )
         results.append(model_res)
 
