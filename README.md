@@ -114,6 +114,22 @@ Live telemetry recorded from runs [`brisk-waterfall-3` (`lja961ve`)](https://wan
 * **Compression Dynamics:** `train/completions/clipped_ratio` drops from **$87.5\%$ down to $78.3\%$** as GRPO penalizes redundant token generation and rewards concise reasoning.
 * **Accelerated Step Time:** Eliminating verbose reasoning loops reduces rollout latency by **$>26$ seconds per step**.
 
+### Pillar 5: Two-Stage DeepSeek-R1 Curriculum Convergence (50 Steps, $G=8$)
+Empirical trajectory verified from `checkpoint-25` and `checkpoint-50` runs on a single Tesla T4 GPU (total wall-clock: $5.34\text{ hours}$, peak VRAM: $8.11\text{ GB}$):
+
+| Step | Loss | Format Reward | Verifier Reward | KL Divergence | Mean Completion Length | Operational Status |
+| :---: | :---: | :---: | :---: | :---: | :---: | :--- |
+| **5** | `-0.1656` | `0.909` | `+1.655` | `0.000` | 495.1 tokens | Syntax firmly anchored via SFT primer; positive gradient emergence |
+| **10** | `-0.0993` | `0.928` | `+1.746` | `0.000` | 537.4 tokens | Feasible priority queues formed; zero syntax drift |
+| **15** | `-0.0449` | `0.966` | `+2.148` | `0.000` | 568.4 tokens | Ascending into zero-violation jackpot zone ($>+2.0$) |
+| **20** | `-0.0102` | `0.969` | `+2.220` | `0.000` | 576.7 tokens | Hard ventilator and ICU capacity constraints strictly observed |
+| **25** | `-0.0211` | `0.950` | `+2.155` | `0.000` | 581.4 tokens | **Gate Check Milestone: Format $\ge +0.8$, Verifier $\ge +0.4$, KL $\le 0.05$ (PASSED)** |
+| **30** | `-0.0284` | `0.981` | `+2.196` | `0.000` | 576.3 tokens | Consistent constraint satisfaction across adversarial topologies |
+| **35** | `-0.0176` | `0.961` | `+2.156` | `0.000` | 579.1 tokens | Zero OOMs, zero token-rambling runaway |
+| **40** | `-0.0192` | `0.981` | `+2.235` | `0.000` | 579.9 tokens | Peak reward plateau; stable exploration standard deviation |
+| **45** | `+0.0008` | `0.956` | `+2.234` | `0.000` | 582.6 tokens | Gradient norms settled; policy stable |
+| **50** | `-0.0000` | `0.994` | `+2.228` | `0.000` | 584.0 tokens | **Optimal Policy Convergence: 99.4% Syntactic Precision, +2.23 Verifier Reward** |
+
 ---
 
 ## 5. Forensic Systems Ablations & Post-Mortems

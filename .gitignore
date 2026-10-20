@@ -31,4 +31,9 @@ build/
 kaggle_kernel/out*/
 kaggle_eval/
 _kaggle_test/
+kaggle_outputs/
+adapter_outputs/
+metrics_outputs/
+checkpoint-25/
+checkpoint-50/
 *.log
