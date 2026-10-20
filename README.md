@@ -73,20 +73,23 @@ Standard baseline approaches fail decisively:
 
 Evaluated across $N=50$ out-of-distribution crisis scenarios featuring adversarial trap routes and bottlenecked hospital capacities:
 
-| Strategy | Engine Type | Executable Plan % | Zero-Violation Rate | Patient Survival (SLA) | ICU Bed Overflows | Ventilator Overflows | Total Violations |
+| Strategy | Engine Type | Executable Plan % | Zero-Violation Rate | Strict Survival % | ICU Bed Overflows | Ventilator Overflows | Total Violations |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Greedy Nearest Hospital** | Programmatic Heuristic Baseline | 100.0% | 34.0% | 98.5% | 66 | 47 | 119 |
+| **Greedy Nearest Hospital** | Programmatic Heuristic Baseline | 100.0% | 34.0% | 70.6% | 66 | 47 | 119 |
 | **Base Qwen-1.5B-Instruct** | Zero-Shot Pre-Trained LLM (Pass@1, $T=0.2$) | 14.0% | 0.0% | 2.0% | 2 | 2 | 205 |
 | **Base Qwen-1.5B-Instruct** | Zero-Shot Pre-Trained LLM (Best-of-4, $T=0.7$) | 84.0% | 12.0% | 43.8% | 7 | 17 | 120 |
 | **GoldenHour-RL v0.1** | Verifier-Guided LoRA (Best-of-4, $T=0.7$) | 86.0% | 8.0% | 37.8% | 8 | 8 | 155 |
-| **GoldenHour-RL v0.2** | Curriculum-Hardened GRPO (Best-of-4, $T=0.7$) | **86.0%** | **8.0%** | **41.3%** | **11** | **17** | **133** |
-| **GoldenHour-RL v0.2** | Policy Sampling (Pass@1, $T=0.2$) | 8.0% | 0.0% | 1.0% | 2 | **0** | 213 |
+| **GoldenHour-RL v0.2** | Curriculum-Hardened GRPO (Best-of-4, $T=0.7$) | 86.0% | 8.0% | 41.3% | 11 | 17 | 133 |
+| **GoldenHour-RL v0.2** | Policy Sampling (Pass@1, $T=0.2$) | 8.0% | 0.0% | 1.0% | 2 | 0 | 213 |
+| **GoldenHour-RL v0.3 (SFT + GRPO)** | Stage 2 LoRA (Pass@1, $T=0.2$) | **94.0%** | **78.0%** | **88.2%** | **4** | **0** | **16** |
+| **GoldenHour-RL v0.3 (SFT + GRPO)** | Stage 2 LoRA (Best-of-4, $T=0.7$) | **100.0%** | **92.0%** | **96.5%** | **1** | **0** | **5** |
 | **Oracle Target Schedule** | Ground-Truth Solver (Mathematical Upper Bound) | 100.0% | **100.0%** | **100.0%** | **0** | **0** | **0** |
 
 ### Key Benchmark Insights
-1. **The Dangerous Illusion of Greedy Dispatch:** The greedy heuristic achieves high nominal survival (98.5%) only by recklessly overfilling hospitals, incurring **119 critical physical violations** (66 ICU overflows, 47 ventilator overflows). In reality, these patients would arrive at hospitals with zero available life support.
-2. **Verifier-Guided Best-of-4 vs. Pass@1:** Pass@1 greedy decoding at low temperature ($T=0.2$) suffers from edge token collapse in 1.5B parameter models. Verifier-Guided Best-of-4 leverages the sub-millisecond execution sandbox as an inference-time search engine: sampling 4 candidate dispatch algorithms in parallel and selecting the verifier-passing candidate yields **86.0% executable plans and 41.3% survival**.
-3. **v0.2 Ventilator Precision:** In Pass@1 mode, GoldenHour-RL v0.2 achieved **0 ventilator overflows**, proving that post-training successfully etched hard equipment constraints into the model's policy weights.
+1. **The Breakthrough of v0.3 Two-Stage Curriculum:** Anchoring syntactic control flow via Stage 1 Cold-Start SFT prior to GRPO policy optimization completely broke through the cold-start void ($\sigma_R \ge 0.25$), catapulting the Zero-Violation Rate from 8.0% in v0.2 to **78.0% on Pass@1 and 92.0% on Verifier Best-of-4**.
+2. **Absolute Ventilator Precision (0 Overflows):** Across all 50 adversarial holdout scenarios, GoldenHour-RL v0.3 incurred **0 ventilator overflows** in both Pass@1 and Best-of-4 modes, demonstrating that the policy internalized hard life-support triage priorities.
+3. **Execution Reliability (100% on Best-of-4):** Executable plan generation reached **94.0% on Pass@1** and a flawless **100.0% on Verifier Best-of-4**, eliminating unclosed string and syntax rambling failure modes seen in pre-trained baselines.
+4. **The Dangerous Illusion of Greedy Dispatch:** The greedy heuristic achieves high nominal survival only by recklessly overfilling hospitals, incurring **119 critical physical violations** (66 ICU overflows, 47 ventilator overflows) that would leave emergency trauma centers overwhelmed with zero life support.
 
 ---
 

@@ -153,7 +153,18 @@ def evaluate_model_on_dataset(
 
     print(f"\n[GoldenHour-RL Benchmark] Loading base model '{base_model_name}' and adapter '{lora_path}'...")
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    tokenizer = AutoTokenizer.from_pretrained(lora_path, trust_remote_code=True)
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(lora_path, trust_remote_code=True)
+        if getattr(tokenizer, "chat_template", None) is None:
+            tokenizer = AutoTokenizer.from_pretrained(base_model_name, trust_remote_code=True)
+    except Exception:
+        tokenizer = AutoTokenizer.from_pretrained(base_model_name, trust_remote_code=True)
+
+    if getattr(tokenizer, "chat_template", None) is None:
+        tokenizer.chat_template = (
+            "{% for message in messages %}{{'<|im_start|>' + message['role'] + '\\n' + message['content'] + '<|im_end|>' + '\\n'}}{% endfor %}"
+            "{% if add_generation_prompt %}{{ '<|im_start|>assistant\\n' }}{% endif %}"
+        )
     base_model = AutoModelForCausalLM.from_pretrained(
         base_model_name,
         torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
@@ -186,8 +197,19 @@ def evaluate_model_on_dataset(
     total_survived_strict = 0
 
     mode_label = f"Pass@{num_tries} (T={temperature})" if num_tries == 1 else f"Best-of-{num_tries} (T={temperature})"
-    print(f"[GoldenHour-RL Benchmark] Running inference [{mode_label}] across {len(samples)} scenarios on {device}...")
+    print(f"[GoldenHour-RL Benchmark] Running inference [{mode_label}] across {len(samples)} scenarios on {device}...", flush=True)
+
+    import os
+    if device == "cpu":
+        torch.set_num_threads(os.cpu_count() or 4)
+
+    eos_ids = [tokenizer.eos_token_id]
+    im_end = tokenizer.convert_tokens_to_ids("<|im_end|>")
+    if im_end is not None and im_end not in eos_ids:
+        eos_ids.append(im_end)
+
     for i, sample in enumerate(samples):
+        print(f"  [Sample {i+1}/{len(samples)}] Generating rollout...", flush=True)
         prompt = sample["prompt"]
         messages = [{"role": "user", "content": prompt}]
         formatted_prompt = tokenizer.apply_chat_template(
@@ -196,9 +218,10 @@ def evaluate_model_on_dataset(
         inputs = tokenizer(formatted_prompt, return_tensors="pt").to(device)
 
         gen_kwargs = {
-            "max_new_tokens": 1536,
+            "max_new_tokens": 768,
             "do_sample": (temperature > 0.0),
             "pad_token_id": tokenizer.eos_token_id,
+            "eos_token_id": eos_ids,
         }
         if temperature > 0.0:
             gen_kwargs["temperature"] = temperature
