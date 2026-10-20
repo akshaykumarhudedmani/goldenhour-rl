@@ -56,7 +56,7 @@ def format_plan_table(plan, state):
     return rows
 
 
-def run_simulation(seed, use_live_model=False):
+def run_simulation(seed, engine_mode="Deterministic Ground-Truth Baseline"):
     sample = generate_scenario(int(seed))
     state = json.loads(sample["state_json"])
 
@@ -64,30 +64,42 @@ def run_simulation(seed, use_live_model=False):
     base_plan = greedy_nearest_heuristic(state)
     base_ver = verify_dispatch_plan(base_plan, sample["state_json"])
 
-    # 2. GoldenHour-RL Dispatch (Using Live Model or Verified Optimal Reference Policy)
+    # 2. Target Dispatch Policy (Deterministic Ground-Truth Baseline vs Live SLM Inference)
     rl_plan = None
-    model_source = "GoldenHour-RL v0.3.0 Reference Solver"
+    model_source = "Deterministic Ground-Truth Baseline"
+    fallback_note = ""
 
-    if use_live_model:
+    if engine_mode == "Live SLM Inference (Requires GPU)":
         model, tokenizer = get_model()
         if model is not None and tokenizer is not None:
-            import torch
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-            messages = [{"role": "user", "content": sample["prompt"]}]
-            fmt_prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-            inputs = tokenizer(fmt_prompt, return_tensors="pt").to(device)
-            with torch.no_grad():
-                out = model.generate(**inputs, max_new_tokens=1024, do_sample=False)
-            gen_text = tokenizer.decode(out[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
-            code = extract_python_code(gen_text)
-            if code:
-                ex = execute_dispatch_code(code, state_str=sample["state_json"])
-                if ex["ok"] and isinstance(ex.get("plan"), list):
-                    rl_plan = ex["plan"]
-                    model_source = f"Live GoldenHour-RL GRPO Model ({MODEL_REPO_ID})"
+            try:
+                import torch
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+                messages = [{"role": "user", "content": sample["prompt"]}]
+                fmt_prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+                inputs = tokenizer(fmt_prompt, return_tensors="pt").to(device)
+                with torch.no_grad():
+                    out = model.generate(**inputs, max_new_tokens=1024, do_sample=False)
+                gen_text = tokenizer.decode(out[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
+                code = extract_python_code(gen_text)
+                if code:
+                    ex = execute_dispatch_code(code, state_str=sample["state_json"])
+                    if ex["ok"] and isinstance(ex.get("plan"), list):
+                        rl_plan = ex["plan"]
+                        model_source = f"Live SLM Inference: GoldenHour-RL GRPO LoRA ({MODEL_REPO_ID})"
+                    else:
+                        fallback_note = f" (Execution failed: {ex.get('error', 'Malformed plan')})"
+            except Exception as e:
+                fallback_note = f" (Inference exception: {str(e)})"
+        else:
+            fallback_note = " (Weights could not be initialized on host CPU/RAM)"
 
     if rl_plan is None:
         rl_plan = json.loads(sample.get("reference_solution", "[]"))
+        if engine_mode == "Live SLM Inference (Requires GPU)":
+            model_source = f"Deterministic Ground-Truth Baseline [Fallback - Live SLM unavailable{fallback_note}]"
+        else:
+            model_source = "Deterministic Ground-Truth Baseline (Optimal Reference Policy)"
 
     rl_ver = verify_dispatch_plan(rl_plan, sample["state_json"])
 
@@ -96,7 +108,7 @@ def run_simulation(seed, use_live_model=False):
     rl_status = "100% VERIFIED ZERO VIOLATIONS" if rl_ver["valid"] else "Failed"
 
     base_viol_text = "\n".join([f"• {v}" for v in base_ver["violations"]]) if base_ver["violations"] else "None (All invariants passed)"
-    rl_viol_text = f"Source: {model_source}\nAll physical invariants verified mathematically (ICU beds, ventilators, single-ambulance, SLA window)."
+    rl_viol_text = f"Plan Source: {model_source}\nAll physical invariants verified mathematically (ICU beds, ventilators, single-ambulance, SLA window)."
 
     base_rows = format_plan_table(base_plan, state)
     rl_rows = format_plan_table(rl_plan, state)
@@ -126,7 +138,11 @@ with gr.Blocks(title="GoldenHour-RL: Verifiable Crisis Dispatch Telemetry") as d
 
     with gr.Row():
         seed_input = gr.Number(value=42, label="Scenario Random Seed", precision=0)
-        use_model_checkbox = gr.Checkbox(value=False, label="Run Live Model Inference (Requires GPU/RAM)", visible=True)
+        mode_selector = gr.Radio(
+            choices=["Deterministic Ground-Truth Baseline", "Live SLM Inference (Requires GPU)"],
+            value="Deterministic Ground-Truth Baseline",
+            label="Dispatch Execution Engine"
+        )
         simulate_btn = gr.Button("⚡ Simulate Emergency Crisis", variant="primary")
 
     with gr.Accordion("🔍 Live Emergency Telemetry State (Patients, Ambulances, Hospitals)", open=False):
@@ -144,11 +160,11 @@ with gr.Blocks(title="GoldenHour-RL: Verifiable Crisis Dispatch Telemetry") as d
             )
 
         with gr.Column():
-            gr.Markdown("### ✅ GoldenHour-RL Target Policy (Verified Optimal)")
-            gr.Markdown("*Mathematically solves ventilator allocation, ICU limits, and Golden-Hour transit windows.*")
+            gr.Markdown("### ✅ Verified Invariant-Compliant Dispatch Plan")
+            gr.Markdown("*Evaluated against physical crisis constraints (ventilators, ICU beds, transit SLAs).*")
             rl_status_out = gr.Textbox(label="Invariant Safety Status", value="")
             rl_margin_out = gr.Textbox(label="Golden-Hour Survival Margin", value="")
-            rl_viol_out = gr.Textbox(label="Deterministic Proof", lines=2)
+            rl_viol_out = gr.Textbox(label="Engine Verification & Audit Proof", lines=2)
             rl_table = gr.Dataframe(
                 headers=["Patient", "Severity", "Ventilator", "Ambulance", "Hospital", "ETA", "SLA Deadline"],
                 label="Verified Invariant-Compliant Schedule"
@@ -156,7 +172,7 @@ with gr.Blocks(title="GoldenHour-RL: Verifiable Crisis Dispatch Telemetry") as d
 
     simulate_btn.click(
         fn=run_simulation,
-        inputs=[seed_input, use_model_checkbox],
+        inputs=[seed_input, mode_selector],
         outputs=[
             state_view,
             base_status_out,
