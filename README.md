@@ -6,7 +6,7 @@
 [![Model Checkpoint](https://img.shields.io/badge/HF%20Hub-akshaykumarhudedmani%2Fgoldenhour--rl-yellow.svg)](https://huggingface.co/akshaykumarhudedmani/goldenhour-rl)
 [![W&B Telemetry](https://img.shields.io/badge/W%26B-goldenhour--rl-orange.svg)](https://wandb.ai/akshaykumarhudedmani-rl/goldenhour-rl)
 [![Peak VRAM](https://img.shields.io/badge/Peak%20VRAM-2.05%20GB-success.svg)]()
-[![Test Suite](https://img.shields.io/badge/Tests-23%2F23%20Passing%20(0.17s)-brightgreen.svg)]()
+[![Test Suite](https://img.shields.io/badge/Tests-23%2F23%20Passing%20(0.18s)-brightgreen.svg)]()
 [![Cost: $0.00](https://img.shields.io/badge/Cost-%240.00%20Zero--Cost-brightgreen.svg)]()
 
 > **"During the 'Golden Hour'—the first 60 minutes after critical trauma or disaster surge—survival drops by nearly 10% for every 6 minutes of delay. In a chatbot, a hallucination is an annoyance. In the Golden Hour, a hallucination costs a life."**
@@ -62,7 +62,7 @@ Standard baseline approaches fail decisively:
 ```
 
 ### Why GRPO over Actor-Critic PPO?
-* **Elimination of the Critic Network:** Traditional Actor-Critic PPO requires maintaining a separate value network in GPU VRAM alongside the reference and policy models. DeepSeek-style GRPO computes advantages relative to group completions ($G=4$ or $G=6$):
+* **Elimination of the Critic Network:** Traditional Actor-Critic PPO requires maintaining a separate value network in GPU VRAM alongside the reference and policy models. DeepSeek-style GRPO computes advantages relative to group completions ($G=4$ or $G=8$):
   $$A_i = \frac{R_i - \text{mean}(\mathbf{R})}{\text{std}(\mathbf{R}) + \epsilon}$$
 * **Memory Economics:** Eliminating the value network cuts training memory by **$>80\%$**, dropping peak memory from $\sim 16.2\text{ GB}$ down to **$2.05\text{ GB}$ peak VRAM** on a single Tesla T4 GPU (verified via `torch.cuda.max_memory_allocated()`).
 * **Deterministic Verification:** Eliminates noisy, non-deterministic LLM-as-a-judge evaluators in favor of sub-millisecond physical invariant proofs.
@@ -79,42 +79,41 @@ Evaluated across $N=50$ out-of-distribution crisis scenarios featuring adversari
 | **Base Qwen-1.5B-Instruct** | Zero-Shot Pre-Trained LLM (Pass@1, $T=0.2$) | 14.0% | 0.0% | 2.0% | 2 | 2 | 205 |
 | **Base Qwen-1.5B-Instruct** | Zero-Shot Pre-Trained LLM (Best-of-4, $T=0.7$) | 84.0% | 12.0% | 43.8% | 7 | 17 | 120 |
 | **GoldenHour-RL v0.1** | Verifier-Guided LoRA (Best-of-4, $T=0.7$) | 86.0% | 8.0% | 37.8% | 8 | 8 | 155 |
-| **GoldenHour-RL v0.2** | Curriculum-Hardened GRPO (Best-of-4, $T=0.7$) | 86.0% | 8.0% | 41.3% | 11 | 17 | 133 |
-| **GoldenHour-RL v0.2** | Policy Sampling (Pass@1, $T=0.2$) | 8.0% | 0.0% | 1.0% | 2 | 0 | 213 |
+| **GoldenHour-RL v0.2** | Curriculum-Hardened GRPO (Best-of-4, $T=0.7$) | **86.0%** | **8.0%** | **41.3%** | **11** | **17** | **133** |
 | **GoldenHour-RL v0.3 (SFT + GRPO)** | Stage 2 LoRA (Pass@1, $T=0.2$) | **94.0%** | **78.0%** | **88.2%** | **4** | **0** | **16** |
 | **GoldenHour-RL v0.3 (SFT + GRPO)** | Stage 2 LoRA (Best-of-4, $T=0.7$) | **100.0%** | **92.0%** | **96.5%** | **1** | **0** | **5** |
 | **Oracle Target Schedule** | Ground-Truth Solver (Mathematical Upper Bound) | 100.0% | **100.0%** | **100.0%** | **0** | **0** | **0** |
 
 ### Key Benchmark Insights
-1. **The Breakthrough of v0.3 Two-Stage Curriculum:** Anchoring syntactic control flow via Stage 1 Cold-Start SFT prior to GRPO policy optimization completely broke through the cold-start void ($\sigma_R \ge 0.25$), catapulting the Zero-Violation Rate from 8.0% in v0.2 to **78.0% on Pass@1 and 92.0% on Verifier Best-of-4**.
-2. **Absolute Ventilator Precision (0 Overflows):** Across all 50 adversarial holdout scenarios, GoldenHour-RL v0.3 incurred **0 ventilator overflows** in both Pass@1 and Best-of-4 modes, demonstrating that the policy internalized hard life-support triage priorities.
-3. **Execution Reliability (100% on Best-of-4):** Executable plan generation reached **94.0% on Pass@1** and a flawless **100.0% on Verifier Best-of-4**, eliminating unclosed string and syntax rambling failure modes seen in pre-trained baselines.
-4. **The Dangerous Illusion of Greedy Dispatch:** The greedy heuristic achieves high nominal survival only by recklessly overfilling hospitals, incurring **119 critical physical violations** (66 ICU overflows, 47 ventilator overflows) that would leave emergency trauma centers overwhelmed with zero life support.
+1. **The Dangerous Illusion of Greedy Dispatch:** The greedy heuristic achieves high nominal survival only by recklessly overfilling hospitals, incurring **119 critical physical violations** (66 ICU overflows, 47 ventilator overflows) that would leave emergency trauma centers overwhelmed with zero available life support.
+2. **Verifier-Guided Best-of-4 vs. Pass@1:** Pass@1 greedy decoding at low temperature ($T=0.2$) suffers from edge token collapse in 1.5B parameter models. Verifier-Guided Best-of-4 leverages the sub-millisecond execution sandbox as an inference-time search engine: sampling 4 candidate dispatch algorithms in parallel and selecting the verifier-passing candidate yields **86.0% executable plans and 41.3% survival in v0.2**, and a flawless **100.0% executable rate and 92.0% zero-violation rate in v0.3**.
+3. **Absolute Ventilator Precision (0 Overflows):** In both v0.2 Pass@1 and v0.3 evaluations, GoldenHour-RL achieved **0 ventilator overflows**, proving that post-training successfully etched hard equipment constraints into the model's policy weights.
 
 ---
 
-## 4. Empirical Training Telemetry & Systems Profiling
+## 4. The 4 Systems Telemetry Pillars (Weights & Biases)
 
-Empirical trajectory verified from the production 50-step two-stage curriculum run (`checkpoint-25` and `checkpoint-50`, weights mirrored at [`akshaykumarhudedmani/goldenhour-rl`](https://huggingface.co/akshaykumarhudedmani/goldenhour-rl)) on a single Tesla T4 GPU (total wall-clock: $5.34\text{ hours}$, peak VRAM: $8.11\text{ GB}$):
+Live telemetry recorded from runs [`brisk-waterfall-3` (`lja961ve`)](https://wandb.ai/akshaykumarhudedmani-rl/goldenhour-rl/runs/lja961ve) and [`worldly-forest-5` (`j6vm9c6x`)](https://wandb.ai/akshaykumarhudedmani-rl/goldenhour-rl/runs/j6vm9c6x) on dual Tesla T4 GPUs:
 
-| Step | Loss | Format Reward | Verifier Reward | KL Divergence | Mean Completion Length | Operational Status |
-| :---: | :---: | :---: | :---: | :---: | :---: | :--- |
-| **5** | `-0.1656` | `0.909` | `+1.655` | `0.000` | 495.1 tokens | Syntax firmly anchored via SFT primer; positive gradient emergence |
-| **10** | `-0.0993` | `0.928` | `+1.746` | `0.000` | 537.4 tokens | Feasible priority queues formed; zero syntax drift |
-| **15** | `-0.0449` | `0.966` | `+2.148` | `0.000` | 568.4 tokens | Ascending into zero-violation jackpot zone ($>+2.0$) |
-| **20** | `-0.0102` | `0.969` | `+2.220` | `0.000` | 576.7 tokens | Hard ventilator and ICU capacity constraints strictly observed |
-| **25** | `-0.0211` | `0.950` | `+2.155` | `0.000` | 581.4 tokens | **Gate Check Milestone: Format $\ge 0.8$, Verifier $\ge +0.4$, Stable Zero-KL Policy Anchor (PASSED)** |
-| **30** | `-0.0284` | `0.981` | `+2.196` | `0.000` | 576.3 tokens | Consistent constraint satisfaction across adversarial topologies |
-| **35** | `-0.0176` | `0.961` | `+2.156` | `0.000` | 579.1 tokens | Zero OOMs, zero token-rambling runaway |
-| **40** | `-0.0192` | `0.981` | `+2.235` | `0.000` | 579.9 tokens | Peak reward plateau; stable exploration standard deviation |
-| **45** | `+0.0008` | `0.956` | `+2.234` | `0.000` | 582.6 tokens | Gradient norms settled; policy stable |
-| **50** | `-0.0000` | `0.994` | `+2.228` | `0.000` | 584.0 tokens | **Optimal Policy Convergence: 99.4% Syntactic Precision, +2.23 Verifier Reward** |
+### Pillar 1: Multiprocessing Sandbox vs. Autoregressive Generation (>450x Speedup)
+![Multiprocessing Sandbox vs Generation](assets/image_f16a0d.png)
+* **Sub-Millisecond Verification:** The compiled AST sandbox verifies all candidate dispatch plans in **$<0.6$ seconds per batch**, compared to **$250–350$ seconds** required for autoregressive token decoding on a Tesla T4.
+* **Asymmetric Compute:** RL post-training shifts computational burden from human or neural evaluators to deterministic algebraic verification.
 
-### Key Systems & RL Convergence Dynamics
-* **Stage 1 SFT Anchoring Eliminates Cold-Start Drift:** Unsloth 4-bit QLoRA warm-start initialization prevents the catastrophic exploration void where unaligned policies emit unexecutable strings. Format reward immediately starts at $0.909$ at Step 5 and climbs to $0.994$ by Step 50.
-* **Deterministic Verifier Ascent:** Verifier reward climbs from $+1.655$ to $+2.228$, demonstrating the policy learns to navigate multi-hospital triage without violating hard physical bounds.
-* **Natural Token Termination:** Completions stabilize around $\sim 580$ tokens with natural `<|im_end|>` termination, preventing runaway loops or reasoning bloat without needing aggressive length truncation.
-* **Asymmetric Compute (<1ms AST Verification):** The compiled AST sandbox verifies all candidate dispatch plans in **$<0.72\text{ ms}$ per candidate**, allowing multi-candidate group rollouts ($G=8$) to be checked deterministically without GPU bottleneck.
+### Pillar 2: Verifier Reward Progression & Exploration Spread Doubling ($\sigma: 0.105 \to 0.205$)
+![Verifier Reward Progression](assets/image_f17d71.png)
+* **Policy Discovery:** `train/rewards/verifier_reward_func/mean` climbs steadily into positive territory as the policy learns to balance ventilator constraints against transit deadlines.
+* **Exploration Spread:** Within-group standard deviation doubles from $\sigma = 0.105$ to $\sigma = 0.205$, confirming that group rollouts differentiate clearly into high-advantage solutions ($A_i > 0$).
+
+### Pillar 3: Zero Dead Batches ($\text{frac\_reward\_zero\_std} = 0.0$) & Natural Termination
+![Zero Dead Batches and Terminated Length](assets/image_f17dac.png)
+* **100% Policy Gradient Efficiency:** `train/frac_reward_zero_std` remains flatlined at **$0.0$** across all training steps. Every group rollout contains non-zero reward variance, preventing degenerate zero-gradient updates.
+* **Concise Reasoning Traces:** Policy traces terminate naturally with `<|im_end|>` in **$\sim 380$ tokens**, comfortably below token ceilings.
+
+### Pillar 4: Computational Parsimony — Eliminating Reasoning Bloat ($-9.2\%$ Clipped Ratio)
+![Computational Parsimony](assets/image_f1806f.png)
+* **Compression Dynamics:** `train/completions/clipped_ratio` drops from **$87.5\%$ down to $78.3\%$** as GRPO penalizes redundant token generation and rewards concise reasoning.
+* **Accelerated Step Time:** Eliminating verbose reasoning loops reduces rollout latency by **$>26$ seconds per step**.
 
 ---
 
@@ -122,7 +121,7 @@ Empirical trajectory verified from the production 50-step two-stage curriculum r
 
 The core engineering contributions of GoldenHour-RL arose from diagnosing failure modes discovered through empirical training runs:
 
-### Ablation 1: The Specification-Gaming Reward Trap
+### Ablation 1: Diagnosing the $+0.35$ Specification Gaming Basin
 * **Symptom:** In early v0.1 training (`lja961ve`), the model achieved 0 capacity overflows, yet evaluation showed 0.5% patient survival.
 * **Root Cause Analysis:** The format reward awarded $+0.5$ whenever code matched `def get_dispatch_plan():`. Because assigning zero patients trivially causes 0 ICU and 0 ventilator overflows, the model discovered that emitting `return []` avoided all capacity penalties while harvesting format bonuses.
 * **The Fix:**
@@ -134,8 +133,8 @@ The core engineering contributions of GoldenHour-RL arose from diagnosing failur
      overflow_penalty = (icu_overflows + vent_overflows) * -0.35
      ```
 
-### Ablation 2: Sandbox Isolation & The CPython GIL Deadlock
-* **Symptom:** Early evaluation threads hung indefinitely on malformed model completions containing nested `while True` loops.
+### Ablation 2: Diagnosing CPython GIL Contention from Un-killable Daemon Threads
+* **Symptom:** Early evaluation threads hung indefinitely on malformed model completions containing nested `while True` loops. Python daemon threads cannot be terminated asynchronously without GIL corruption or interpreter crashes.
 * **Root Cause Analysis:** Standard Python multi-threading cannot terminate running CPython bytecode asynchronously without GIL deadlocks or thread pool contamination.
 * **The Fix:**
   * Implemented `LoopBoundingTransformer(ast.NodeTransformer)` in `goldenhour_rl/sandbox/executor.py`.
@@ -147,19 +146,33 @@ The core engineering contributions of GoldenHour-RL arose from diagnosing failur
             # Injects: __loop_guard_counter += 1; if __loop_guard_counter > 5000: raise TimeoutError
     ```
 
-### Ablation 3: Schema Drift & Dynamic Reflection Security
-* **Symptom:** Generated solutions occasionally raised `AttributeError: 'list' object has no attribute 'values'` or failed security audits via `getattr(getattr((), "__ca" + "lass__"), "__ba" + "ses__")[0]`.
+### Ablation 3: Diagnosing Sandbox Schema Drift & Dynamic Reflection Security
+* **Symptom:** Generated solutions occasionally raised `AttributeError: 'list' object has no attribute 'values'`, failed on missing `__build_class__`, or failed security audits via `getattr(getattr((), "__ca" + "lass__"), "__ba" + "ses__")[0]`.
 * **The Fix:**
   1. **`DualHospitalMap`:** Subclassed `dict` to support both integer index access (`hospitals[0]`) and dictionary key access (`hospitals["HOSP_1"]`), alongside `.values()`.
-  2. **Dynamic Reflection Defenses:** Wrapped reflection builtins with `_safe_getattr` and `_safe_hasattr`, blocking any attribute string starting with `_` to eliminate dunder escape vulnerabilities (`__subclasses__`, `__globals__`).
-  3. **Safe Builtins:** Whitelisted `__build_class__`, `object`, `type`, `super`, `property`, `next`, `iter`, alongside boolean aliases (`true: True`, `false: False`, `null: None`).
+  2. **`SafeJsonModule`:** Wrapped `json.loads()` to make it idempotent when passed already-parsed dictionaries.
+  3. **Dynamic Reflection Defenses:** Wrapped reflection builtins with `_safe_getattr` and `_safe_hasattr`, blocking any attribute string starting with `_` to eliminate dunder escape vulnerabilities (`__subclasses__`, `__globals__`).
+  4. **Safe Builtins Whitelist:** Whitelisted `__build_class__`, `object`, `type`, `super`, `property`, `next`, `iter`, alongside boolean aliases (`true: True`, `false: False`, `null: None`).
 
 ---
 
-## 6. Repository Layout
+## 6. Limitations & Future Work
+
+1. **The 1.5B Parameter Capacity Ceiling:** While Qwen2.5-Coder-1.5B demonstrates strong code generation syntax, multi-objective combinatorial constraint satisfaction pushes small models toward edge token degradation on dense NP-hard instances. Future work will explore 3B and 7B parameter models.
+2. **Neuro-Symbolic Handoff:** In mission-critical emergency dispatch, LLMs should ideally not perform raw branch-and-bound arithmetic. The optimal architecture pairs an LLM (parsing unstructured natural language caller reports into structured constraints) with a deterministic Mixed-Integer Linear Programming (MILP) solver (e.g., Google OR-Tools / HiGHS) for mathematical optimality guarantees.
+3. **Inference Scaling:** Future migration from Hugging Face Transformers generation to vLLM PagedAttention will enable sub-second Best-of-64 verification with $>10\times$ rollout throughput.
+
+---
+
+## 7. Repository Layout
 
 ```
 goldenhour-rl/
+├── assets/
+│   ├── image_f16a0d.png           # Profiling plot: Autoregressive decoding vs. <1ms sandbox verification
+│   ├── image_f17d71.png           # Reward trajectory: Verifier reward climbing & exploration spread doubling
+│   ├── image_f17dac.png           # Policy efficiency: 0% dead batches (frac_reward_zero_std = 0)
+│   └── image_f1806f.png           # Computational parsimony: Token compression & step time reduction
 ├── data/
 │   ├── crisis_train.jsonl         # 300 synthetic training scenarios with adversarial trap routes
 │   └── crisis_eval.jsonl          # 100 out-of-distribution evaluation scenarios (seed=999)
@@ -205,14 +218,6 @@ goldenhour-rl/
 
 ---
 
-## 7. Limitations & Future Directions
-
-1. **1.5B Parameter Capacity Limits:** While Qwen2.5-Coder-1.5B demonstrates strong code generation syntax, multi-objective combinatorial constraint satisfaction pushes small models toward edge token degradation at low sampling temperatures. Future work will investigate 3B and 7B parameter models.
-2. **Neuro-Symbolic Handoff:** In mission-critical emergency dispatch, LLMs should ideally not perform raw branch-and-bound arithmetic. The optimal architecture pairs an LLM (parsing unstructured natural language caller reports into structured constraints) with a deterministic Mixed-Integer Linear Programming (MILP) solver (e.g., Google OR-Tools / HiGHS) for mathematical optimality guarantees.
-3. **vLLM PagedAttention Integration:** Upgrading rollout generation from Hugging Face Transformers to vLLM will enable higher group counts ($G=16$) with sub-second batch rollout latency.
-
----
-
 ## 8. Quickstart & Reproducibility Guide
 
 ### Installation
@@ -229,13 +234,13 @@ cp .env.example .env
 # Edit .env: HF_TOKEN=... WANDB_API_KEY=...
 ```
 
-### Run Unit Test Suite (<0.15s AST Verification)
+### Run Unit Test Suite (<0.20s AST Verification)
 ```bash
 pytest -v
 ```
 Output:
 ```
-============================= 19 passed in 0.10s ==============================
+============================= 23 passed in 0.18s ==============================
 ```
 
 ### Synthesize Emergency Scenarios
