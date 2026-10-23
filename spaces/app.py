@@ -56,7 +56,7 @@ def format_plan_table(plan, state):
     return rows
 
 
-def run_simulation(seed, engine_mode="Deterministic Ground-Truth Baseline"):
+def run_simulation(seed, engine_mode="Synthetic Deterministic Ground-Truth Baseline"):
     sample = generate_scenario(int(seed))
     state = json.loads(sample["state_json"])
 
@@ -64,9 +64,9 @@ def run_simulation(seed, engine_mode="Deterministic Ground-Truth Baseline"):
     base_plan = greedy_nearest_heuristic(state)
     base_ver = verify_dispatch_plan(base_plan, sample["state_json"])
 
-    # 2. Target Dispatch Policy (Deterministic Ground-Truth Baseline vs Live SLM Inference)
+    # 2. Target Dispatch Policy (Synthetic Deterministic Ground-Truth Baseline vs Live SLM Inference)
     rl_plan = None
-    model_source = "Deterministic Ground-Truth Baseline"
+    model_source = "Synthetic Deterministic Ground-Truth Baseline"
     fallback_note = ""
 
     if engine_mode == "Live SLM Inference (Requires GPU)":
@@ -97,9 +97,9 @@ def run_simulation(seed, engine_mode="Deterministic Ground-Truth Baseline"):
     if rl_plan is None:
         rl_plan = json.loads(sample.get("reference_solution", "[]"))
         if engine_mode == "Live SLM Inference (Requires GPU)":
-            model_source = f"Deterministic Ground-Truth Baseline [Fallback - Live SLM unavailable{fallback_note}]"
+            model_source = f"Synthetic Deterministic Ground-Truth Baseline [Fallback - Live SLM unavailable{fallback_note}]"
         else:
-            model_source = "Deterministic Ground-Truth Baseline (Optimal Reference Policy)"
+            model_source = "Synthetic Deterministic Ground-Truth Baseline (Oracle Reference from Synthesizer)"
 
     rl_ver = verify_dispatch_plan(rl_plan, sample["state_json"])
 
@@ -108,7 +108,7 @@ def run_simulation(seed, engine_mode="Deterministic Ground-Truth Baseline"):
     rl_status = "100% VERIFIED ZERO VIOLATIONS" if rl_ver["valid"] else "Failed"
 
     base_viol_text = "\n".join([f"• {v}" for v in base_ver["violations"]]) if base_ver["violations"] else "None (All invariants passed)"
-    rl_viol_text = f"Plan Source: {model_source}\nAll physical invariants verified mathematically (ICU beds, ventilators, single-ambulance, SLA window)."
+    rl_viol_text = f"Plan Source: {model_source}\nInvariant Verification: ICU beds, ventilators, single-ambulance, SLA deadlines checked."
 
     base_rows = format_plan_table(base_plan, state)
     rl_rows = format_plan_table(rl_plan, state)
@@ -130,17 +130,17 @@ def run_simulation(seed, engine_mode="Deterministic Ground-Truth Baseline"):
 with gr.Blocks(title="GoldenHour-RL: Verifiable Crisis Dispatch Telemetry") as demo:
     gr.Markdown("# ⏱️ Project GoldenHour-RL: Crisis Dispatch Telemetry Benchmark")
     gr.Markdown(
-        "Demonstrating why unconstrained LLMs and naive nearest heuristics fail during the **Golden Hour** "
-        "(causing ventilator shortages and ICU bed overflow) vs. **GoldenHour-RL**, which is post-trained "
-        "via GRPO inside a deterministic verifier sandbox to never violate physical life-support invariants.\n\n"
+        "Empirical evaluation testbed analyzing whether sub-3B Small Language Models can synthesize verifiable dispatch "
+        "logic under tight resource budgets ($\le 8\\text{ GB}$ VRAM). Compares unconstrained nearest-neighbor dispatch "
+        "(causing ventilator shortages and ICU bed overflow) against verifiable constraint-satisfaction schedules.\n\n"
         f"**Model Adapter Binding:** [`{MODEL_REPO_ID}`](https://huggingface.co/{MODEL_REPO_ID}) (Release v0.3.0 • 50 Steps • +2.23 Verifier Reward)"
     )
 
     with gr.Row():
         seed_input = gr.Number(value=42, label="Scenario Random Seed", precision=0)
         mode_selector = gr.Radio(
-            choices=["Deterministic Ground-Truth Baseline", "Live SLM Inference (Requires GPU)"],
-            value="Deterministic Ground-Truth Baseline",
+            choices=["Synthetic Deterministic Ground-Truth Baseline", "Live SLM Inference (Requires GPU)"],
+            value="Synthetic Deterministic Ground-Truth Baseline",
             label="Dispatch Execution Engine"
         )
         simulate_btn = gr.Button("⚡ Simulate Emergency Crisis", variant="primary")
@@ -150,7 +150,7 @@ with gr.Blocks(title="GoldenHour-RL: Verifiable Crisis Dispatch Telemetry") as d
 
     with gr.Row():
         with gr.Column():
-            gr.Markdown("### ❌ Unconstrained Dispatch (Naive / Standard LLM)")
+            gr.Markdown("### ❌ Unconstrained Dispatch (Naive Nearest Heuristic)")
             gr.Markdown("*Greedily routes to nearest hospital without global bottleneck verification.*")
             base_status_out = gr.Textbox(label="Invariant Safety Status", value="")
             base_viol_out = gr.Textbox(label="Life-Support Invariant Violations", lines=4)
@@ -160,14 +160,14 @@ with gr.Blocks(title="GoldenHour-RL: Verifiable Crisis Dispatch Telemetry") as d
             )
 
         with gr.Column():
-            gr.Markdown("### ✅ Verified Invariant-Compliant Dispatch Plan")
-            gr.Markdown("*Evaluated against physical crisis constraints (ventilators, ICU beds, transit SLAs).*")
+            gr.Markdown("### 📋 Evaluated Dispatch Schedule")
+            gr.Markdown("*Displays either the Synthetic Ground-Truth Reference or live Qwen2.5-Coder-1.5B LoRA generation.*")
             rl_status_out = gr.Textbox(label="Invariant Safety Status", value="")
             rl_margin_out = gr.Textbox(label="Golden-Hour Survival Margin", value="")
-            rl_viol_out = gr.Textbox(label="Engine Verification & Audit Proof", lines=2)
+            rl_viol_out = gr.Textbox(label="Execution Engine & Dispatch Source", lines=2)
             rl_table = gr.Dataframe(
                 headers=["Patient", "Severity", "Ventilator", "Ambulance", "Hospital", "ETA", "SLA Deadline"],
-                label="Verified Invariant-Compliant Schedule"
+                label="Dispatch Schedule Table"
             )
 
     simulate_btn.click(
